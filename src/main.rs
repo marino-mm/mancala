@@ -1,91 +1,238 @@
-use std::ops::Range;
+use std::io;
+use std::io::{stdin, BufRead, Write};
 
 #[derive(PartialEq, Clone)]
-struct Player{
-    name:String,
+struct Player {
+    id: u8,
+    name: String,
 }
 struct Game {
     player1: Player,
     player2: Player,
     turn: u8,
-    board: [u8; 14]
+    current_player_id: u8,
+    board: [u8; 14],
+    status: String,
+    is_free_turn: bool,
 }
 
 impl Game {
-
-    fn get_player1_score(&self) -> u8 {
-        self.board[6]
+    fn get_player_score_pit_position(&self, player_id: u8) -> u8 {
+        if self.player1.id == player_id { 6 } else { 13 }
     }
-    fn get_player2_score(&self) -> u8 {
-        self.board[13]
+
+    fn get_pit_across(&self, pit_numb: u8) -> usize {
+        (12 - pit_numb) as usize
     }
 
     fn standard_game() -> Game {
         Game {
-            player1: Player{ name: "player1".to_string()},
-            player2: Player{ name: "player2".to_string()},
+            player1: Player {
+                id: 1,
+                name: "player1".to_string(),
+            },
+            player2: Player {
+                id: 2,
+                name: "player2".to_string(),
+            },
             turn: 1,
-            board: [
-                4, 4, 4, 4, 4, 4, 0,4, 4, 4, 4, 4, 4, 0
-            ] }
-    }
-
-    fn current_players_turn(&self) -> &Player {
-        if &self.turn % 2 == 1{
-            &self.player1
-        }
-        else {
-            &self.player2
+            current_player_id: 1,
+            board: [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0],
+            status: "running".to_string(),
+            is_free_turn: false,
         }
     }
 
-    fn players_pits_limits(&self, player:&Player) -> (u8, u8) {
-        if player == &self.player1 {
-            (0, 5)
-        }else
-        {
-            (7, 12)
+    fn is_players_pit(&self, player_id: u8, pit_number: usize) -> bool {
+        (self.player1.id == player_id && pit_number < 6)
+            || (self.player2.id == player_id && (7..13).contains(&pit_number))
+    }
+
+    fn switch_current_player(&mut self) {
+        if self.player1.id == self.current_player_id {
+            self.current_player_id = self.player2.id;
+        } else {
+            self.current_player_id = self.player1.id;
         }
     }
 
-    fn play_pit(&mut self, pit_number: u8) {
-        let current_player = &self.current_players_turn().clone();
-        let limits = self.players_pits_limits(current_player);
-        if limits.0 <= pit_number && pit_number <= limits.1 {
+    fn is_free_move(&self, last_pit: u8) -> bool {
+        (self.current_player_id == self.player1.id
+            && self.get_player_score_pit_position(self.player1.id) == last_pit)
+            || (self.current_player_id == self.player2.id
+                && self.get_player_score_pit_position(self.player2.id) == last_pit)
+    }
+
+    fn no_valid_moves_for_current_player(&self) -> bool {
+        if self.current_player_id == self.player1.id {
+            for i in 0..6 {
+                if !self.board[i] != 0 {
+                    return false;
+                }
+            }
+        } else {
+            for i in 7..13 {
+                if !self.board[i] != 0 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn end_game(&mut self) {
+        for i in 0..6 {
+            self.board[self.get_player_score_pit_position(1) as usize] += self.board[i];
+            self.board[i] = 0;
+        }
+        for i in 7..13 {
+            self.board[self.get_player_score_pit_position(2) as usize] += self.board[i];
+            self.board[i] = 0;
+        }
+        self.status = "end".to_string();
+    }
+
+    fn play_move(&mut self, pit_number: u8){
             self.turn += 1;
             let mut gems_number = self.board[pit_number as usize];
-            let mut current_pit = pit_number + 1;
+            let mut current_pit = pit_number;
             self.board[pit_number as usize] = 0;
             while gems_number > 0 {
-                if current_pit == 6 && current_player == &self.player2 {continue;}
-                else if current_pit > 13 && current_player == &self.player1 {continue;}
-                else {
+                current_pit += 1;
+                current_pit = current_pit % 14;
+                if current_pit == 6 && self.current_player_id == self.player2.id {
+                    continue;
+                } else if current_pit == 13 && self.current_player_id == self.player1.id {
+                    continue;
+                } else {
                     self.board[current_pit as usize] += 1;
                     gems_number -= 1;
                 }
-                current_pit += 1;
-                current_pit = current_pit % 14;
+            }
+
+            let pit_across_numb = self.get_pit_across(current_pit);
+            if self.board[current_pit as usize] == 1
+                && self.board[pit_across_numb] != 0
+                && self.is_players_pit(self.current_player_id, pit_number as usize)
+            {
+                let current_player = self.current_player_id;
+                let player_pit_number = self.get_player_score_pit_position(current_player);
+
+                self.board[player_pit_number as usize] += 1;
+                self.board[current_pit as usize] = 0;
+
+                self.board[player_pit_number as usize] += self.board[pit_across_numb];
+                self.board[pit_across_numb] = 0;
+            }
+            if self.is_free_move(current_pit) {
+                self.is_free_turn = true;
+            }
+            else {
+                self.is_free_turn = false;
+            }
+    }
+
+    fn read_move(&self, input:&mut String) -> u8{
+        stdin().read_line(input).unwrap();
+        loop {
+            match input.trim().parse::<u8>() {
+                Ok(num) => {
+                    input.clear();
+                    return num;
+                }
+                Err(_) => {
+                    input.clear();
+                    println!("Invalid input");
+                }
             }
         }
     }
 
-    fn print_board(&mut self) {
-        let place_width = 2;
-        println!("╔═════════╗");
-        println!("║    {:02}   ║", self.board[13]);
-        println!("╠════╦════╣");
-        for i in 0..6{
-            println!("║ {:02} ║ {:02} ║", self.board[i], self.board[12 - i]);
+    fn start_game_loop(&mut self) {
+        let mut input = String::new();
+        let mut move_number = 0;
+
+        self.print_board().unwrap();
+        while self.status != "end" {
+
+            if self.no_valid_moves_for_current_player(){
+                self.end_game();
+                return;
+            }
+
+            move_number = self.read_move(&mut input);
+            if self.is_players_pit(self.current_player_id, move_number as usize)
+            && (self.board[move_number as usize] != 0){
+                self.play_move(move_number);
+            }
+            else {
+                println!("Invalid move number");
+            }
+
+            if self.is_free_turn {
+                println!("It is your free move");
+                self.print_board().unwrap();
+            } else {
+                self.switch_current_player();
+                self.print_board().unwrap();
+            }
+
         }
-        println!("╠════╩════╣");
-        println!("║    {:02}   ║", self.board[6]);
-        println!("╚═════════╝");
+    }
+
+    fn print_board(&self) -> std::io::Result<()> {
+        let mut stdout = io::stdout().lock();
+        let current_player_id = self.current_player_id;
+        let current_player_name = match self.player1.id == current_player_id {
+            true => self.player1.name.clone(),
+            false => self.player2.name.clone(),
+        };
+
+        writeln!(stdout, "Current player: {}", current_player_name)?;
+        writeln!(stdout, "╔═════════╗")?;
+        writeln!(
+            stdout,
+            "║    {:02}   ║",
+            self.board[self.get_player_score_pit_position(2) as usize]
+        )?;
+        writeln!(stdout, "╠════╦════╣")?;
+        for i in 0..6 {
+            writeln!(
+                stdout,
+                "║ {:02} ║ {:02} ║",
+                self.board[i],
+                self.board[12 - i]
+            )?;
+        }
+        writeln!(stdout, "╠════╩════╣")?;
+        writeln!(
+            stdout,
+            "║    {:02}   ║",
+            self.board[self.get_player_score_pit_position(1) as usize]
+        )?;
+        write!(stdout, "╚═════════╝")?;
+        write!(stdout, "\x1B[15F")?;
+        stdout.flush()?;
+        Ok(())
+    }
+
+    fn print_winner(&self) -> std::io::Result<()> {
+        let player1_score = self.board[self.get_player_score_pit_position(1) as usize];
+        let player2_score = self.board[self.get_player_score_pit_position(2) as usize];
+
+        let mut stdout = io::stdout().lock();
+        if player1_score > player2_score {
+            write!(stdout, "Winner is {}", self.player1.name)?;
+        } else if player2_score > player1_score {
+            write!(stdout, "Winner is {}", self.player2.name)?;
+        } else {
+            write!(stdout, "It is a draw")?;
+        }
+        Ok(())
     }
 }
 
 fn main() {
-    let mut board = Game::standard_game();
-    board.print_board();
-    board.play_pit(3);
-    board.print_board();
+    let mut game = Game::standard_game();
+    game.start_game_loop();
 }
