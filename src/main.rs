@@ -1,5 +1,9 @@
-use std::io;
-use std::io::{stdin, BufRead, Write};
+use crossterm::style::Print;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::{cursor, QueueableCommand};
+use std::io::{stdin, stdout, BufRead, Write};
+use std::thread::sleep;
+use std::time::Duration;
 
 #[derive(PartialEq, Clone)]
 struct Player {
@@ -26,6 +30,7 @@ impl Game {
     }
 
     fn standard_game() -> Game {
+        stdout().queue(Clear(ClearType::All)).unwrap();
         Game {
             player1: Player {
                 id: 1,
@@ -152,7 +157,7 @@ impl Game {
         let mut input = String::new();
         let mut move_number = 0;
 
-        self.print_board().unwrap();
+        self.print_board();
         while self.status != "end" {
 
             if self.no_valid_moves_for_current_player(){
@@ -171,68 +176,68 @@ impl Game {
 
             if self.is_free_turn {
                 println!("It is your free move");
-                self.print_board().unwrap();
+                self.print_board();
             } else {
                 self.switch_current_player();
-                self.print_board().unwrap();
+                self.print_board();
             }
 
         }
     }
 
-    fn print_board(&self) -> std::io::Result<()> {
-        let mut stdout = io::stdout().lock();
-        let current_player_id = self.current_player_id;
-        let current_player_name = match self.player1.id == current_player_id {
-            true => self.player1.name.clone(),
-            false => self.player2.name.clone(),
-        };
+    fn print_board(&self){
+        let mut lines = Vec::<String>::with_capacity(20);
 
-        writeln!(stdout, "Current player: {}", current_player_name)?;
-        writeln!(stdout, "╔═════════╗")?;
-        writeln!(
-            stdout,
-            "║    {:02}   ║",
-            self.board[self.get_player_score_pit_position(2) as usize]
-        )?;
-        writeln!(stdout, "╠════╦════╣")?;
+        lines.push("╔═════════╗".to_string());
+        lines.push(format!("║    {:02}   ║",self.board[self.get_player_score_pit_position(2) as usize]));
+        lines.push("╠════╦════╣".to_string());
         for i in 0..6 {
-            writeln!(
-                stdout,
-                "║ {:02} ║ {:02} ║",
-                self.board[i],
-                self.board[12 - i]
-            )?;
+            lines.push(format!("║ {:02} ║ {:02} ║",self.board[i],self.board[12 - i]));
         }
-        writeln!(stdout, "╠════╩════╣")?;
-        writeln!(
-            stdout,
-            "║    {:02}   ║",
-            self.board[self.get_player_score_pit_position(1) as usize]
-        )?;
-        write!(stdout, "╚═════════╝")?;
-        write!(stdout, "\x1B[15F")?;
-        stdout.flush()?;
-        Ok(())
+        lines.push("╠════╩════╣".to_string());
+        lines.push(format!("║    {:02}   ║",self.board[self.get_player_score_pit_position(1) as usize]));
+        lines.push("╚═════════╝".to_string());
+
+        stdout().queue(cursor::MoveTo(0, 1)).unwrap();
+        for line in lines {
+            stdout().queue(Clear(ClearType::CurrentLine)).unwrap();
+            stdout().queue(Print(line)).unwrap();
+            stdout().queue(cursor::MoveToNextLine(1)).unwrap();
+        }
+        stdout().flush().unwrap();
     }
 
-    fn print_winner(&self) -> std::io::Result<()> {
-        let player1_score = self.board[self.get_player_score_pit_position(1) as usize];
-        let player2_score = self.board[self.get_player_score_pit_position(2) as usize];
+    fn print_header(&self, text: String) {
+        stdout().queue(cursor::MoveTo(0,0));
+        stdout().queue(Clear(ClearType::CurrentLine));
+        stdout().queue(Print(text)).unwrap();
+        stdout().flush().unwrap();
+    }
 
-        let mut stdout = io::stdout().lock();
-        if player1_score > player2_score {
-            write!(stdout, "Winner is {}", self.player1.name)?;
-        } else if player2_score > player1_score {
-            write!(stdout, "Winner is {}", self.player2.name)?;
-        } else {
-            write!(stdout, "It is a draw")?;
-        }
-        Ok(())
+    fn print_footer(&self, text: String) {
+        stdout().queue(cursor::MoveTo(0,13));
+        stdout().queue(Clear(ClearType::CurrentLine));
+        stdout().queue(Print(text)).unwrap();
+        stdout().flush().unwrap();
     }
 }
 
 fn main() {
     let mut game = Game::standard_game();
-    game.start_game_loop();
+    // game.start_game_loop();
+    stdout().queue(EnterAlternateScreen).unwrap();
+    enable_raw_mode().unwrap();
+    stdout().queue(cursor::Hide).unwrap();
+
+    game.print_header(String::from("This is header"));
+    game.print_board();
+    sleep(Duration::from_secs(5));
+    game.play_move(0);
+    game.print_board();
+    sleep(Duration::from_secs(5));
+    game.print_footer("This is footer".to_string());
+    sleep(Duration::from_secs(5));
+
+    disable_raw_mode().unwrap();
+    stdout().queue(LeaveAlternateScreen).unwrap();
 }
