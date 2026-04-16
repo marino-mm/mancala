@@ -1,9 +1,9 @@
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{cursor, QueueableCommand};
-use std::io::{stdin, stdout, BufRead, Write};
-use std::thread::sleep;
-use std::time::Duration;
+use crossterm::{cursor, queue, QueueableCommand};
+use cursor::MoveTo;
+use std::io::{stdin, stdout, Write};
+use ClearType::CurrentLine;
 
 #[derive(PartialEq, Clone)]
 struct Player {
@@ -147,7 +147,7 @@ impl Game {
                 }
                 Err(_) => {
                     input.clear();
-                    println!("Invalid input");
+                    self.print_footer("Invalid input");
                 }
             }
         }
@@ -171,11 +171,11 @@ impl Game {
                 self.play_move(move_number);
             }
             else {
-                println!("Invalid move number");
+                self.print_footer("Invalid move number");
             }
 
             if self.is_free_turn {
-                println!("It is your free move");
+                self.print_footer("It is your free move");
                 self.print_board();
             } else {
                 self.switch_current_player();
@@ -186,7 +186,10 @@ impl Game {
     }
 
     fn print_board(&self){
+
+        let selected_pit_number = 0u8;
         let mut lines = Vec::<String>::with_capacity(20);
+        let mut stdout = stdout();
 
         lines.push("╔═════════╗".to_string());
         lines.push(format!("║    {:02}   ║",self.board[self.get_player_score_pit_position(2) as usize]));
@@ -198,46 +201,62 @@ impl Game {
         lines.push(format!("║    {:02}   ║",self.board[self.get_player_score_pit_position(1) as usize]));
         lines.push("╚═════════╝".to_string());
 
-        stdout().queue(cursor::MoveTo(0, 1)).unwrap();
+        queue!(stdout, MoveTo(0, 1)).unwrap();
         for line in lines {
-            stdout().queue(Clear(ClearType::CurrentLine)).unwrap();
-            stdout().queue(Print(line)).unwrap();
-            stdout().queue(cursor::MoveToNextLine(1)).unwrap();
+            queue!(stdout,
+                Clear(CurrentLine),
+                Print(line),
+                cursor::MoveToNextLine(1)
+            ).unwrap();
         }
-        stdout().flush().unwrap();
+        stdout.flush().unwrap();
     }
 
     fn print_header(&self, text: String) {
-        stdout().queue(cursor::MoveTo(0,0));
-        stdout().queue(Clear(ClearType::CurrentLine));
-        stdout().queue(Print(text)).unwrap();
-        stdout().flush().unwrap();
+        let mut stdout = stdout();
+        queue!(stdout,
+            MoveTo(0,0),
+            Clear(CurrentLine),
+            Print(text)
+        ).unwrap();
+        stdout.flush().unwrap();
     }
 
-    fn print_footer(&self, text: String) {
-        stdout().queue(cursor::MoveTo(0,13));
-        stdout().queue(Clear(ClearType::CurrentLine));
-        stdout().queue(Print(text)).unwrap();
-        stdout().flush().unwrap();
+    fn print_footer(&self, text: &str) {
+        let mut stdout = stdout();
+        queue!(stdout,
+            MoveTo(0,13),
+            Clear(CurrentLine),
+            Print(text)
+        ).unwrap();
+        stdout.flush().unwrap();
     }
 }
 
-fn main() {
-    let mut game = Game::standard_game();
-    // game.start_game_loop();
-    stdout().queue(EnterAlternateScreen).unwrap();
+fn setup_game_screen(){
+    let mut stdout = stdout();
+    queue!(stdout,
+        EnterAlternateScreen,
+        cursor::Hide
+    ).unwrap();
     enable_raw_mode().unwrap();
-    stdout().queue(cursor::Hide).unwrap();
+    stdout.flush().unwrap();
+}
 
-    game.print_header(String::from("This is header"));
-    game.print_board();
-    sleep(Duration::from_secs(5));
-    game.play_move(0);
-    game.print_board();
-    sleep(Duration::from_secs(5));
-    game.print_footer("This is footer".to_string());
-    sleep(Duration::from_secs(5));
-
+fn exit_game(){
+    let mut stdout = stdout();
     disable_raw_mode().unwrap();
-    stdout().queue(LeaveAlternateScreen).unwrap();
+    queue!(stdout,
+        LeaveAlternateScreen
+    ).unwrap();
+    stdout.flush().unwrap();
+}
+
+fn main() {
+    setup_game_screen();
+    let mut game = Game::standard_game();
+
+    game.start_game_loop();
+
+    exit_game();
 }
