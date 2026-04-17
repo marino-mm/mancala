@@ -191,15 +191,15 @@ impl Game {
         let mut lines = Vec::<String>::with_capacity(20);
         let mut stdout = stdout();
 
-        lines.push("╔═════════╗".to_string());
-        lines.push(format!("║    {:02}   ║",self.board[self.get_player_score_pit_position(2) as usize]));
-        lines.push("╠════╦════╣".to_string());
+        lines.push("  ╔═════════╗".to_string());
+        lines.push(format!("{:02}║    {:02}   ║{:02}", self.get_player_score_pit_position(2),self.board[self.get_player_score_pit_position(2) as usize], self.get_player_score_pit_position(2)));
+        lines.push("  ╠════╦════╣".to_string());
         for i in 0..6 {
-            lines.push(format!("║ {:02} ║ {:02} ║",self.board[i],self.board[12 - i]));
+            lines.push(format!("{:02}║ {:02} ║ {:02} ║{:02}", i, self.board[i], self.board[12 - i], 12 - i));
         }
-        lines.push("╠════╩════╣".to_string());
-        lines.push(format!("║    {:02}   ║",self.board[self.get_player_score_pit_position(1) as usize]));
-        lines.push("╚═════════╝".to_string());
+        lines.push("  ╠════╩════╣".to_string());
+        lines.push(format!("{:02}║    {:02}   ║{:02}", self.get_player_score_pit_position(1),self.board[self.get_player_score_pit_position(1) as usize], self.get_player_score_pit_position(1)));
+        lines.push("  ╚═════════╝".to_string());
 
         queue!(stdout, MoveTo(0, 1)).unwrap();
         for line in lines {
