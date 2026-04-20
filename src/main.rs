@@ -217,6 +217,8 @@ impl Game {
 
                 self.board[player_pit_number as usize] += self.board[pit_across_numb];
                 self.board[pit_across_numb] = 0;
+
+                self.is_free_turn = false;
             }
             else {
                 self.is_free_turn = false;
