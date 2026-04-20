@@ -1,13 +1,14 @@
-use std::io;
+use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
 use crossterm::style::{Print, Stylize};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, queue, QueueableCommand};
 use cursor::MoveTo;
-use std::io::{stdin, stdout, Write};
+use std::io;
+use std::io::{stdout, Write};
 use std::process::exit;
 use std::time::Duration;
 use ClearType::CurrentLine;
-use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
+use rand::RngExt;
 
 #[derive(PartialEq, Clone)]
 struct Player {
@@ -50,8 +51,34 @@ impl Game {
             },
             turn: 1,
             current_player_id: 1,
-            //board: [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0],
-            board: [0, 0, 0, 0, 0, 1, 0, 4, 4, 4, 4, 4, 4, 0],
+            board: [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0],
+            // board: [0, 0, 0, 0, 0, 1, 0, 4, 4, 4, 4, 4, 4, 0],
+            status: "running".to_string(),
+            is_free_turn: false,
+            selected_pit_number: 0,
+        }
+    }
+
+    fn random_game() -> Game {
+        let mut board = [0; 14];
+        let mut rng = rand::rng();
+        for n in 0..6{
+            let x = rng.random_range(1..=7);
+            board[n] = x;
+            board[n+7] = x;
+        }
+        Game {
+            player1: Player {
+                id: 1,
+                name: "player1".to_string(),
+            },
+            player2: Player {
+                id: 2,
+                name: "player2".to_string(),
+            },
+            turn: 1,
+            current_player_id: 1,
+            board,
             status: "running".to_string(),
             is_free_turn: false,
             selected_pit_number: 0,
@@ -117,7 +144,7 @@ impl Game {
     fn no_valid_moves_for_eather_player(&self) -> bool {
         let mut player1_valid_pits = 0;
         let mut player2_valid_pits = 0;
-        for n in (0..6){
+        for n in 0..6 {
             if self.board[n] != 0 {
                 player1_valid_pits += 1;
             }
@@ -125,14 +152,14 @@ impl Game {
                 player2_valid_pits += 1;
             }
         }
-        print!("player1: {}, player2: {}", player1_valid_pits, player2_valid_pits);
         if player1_valid_pits == 0 || player2_valid_pits == 0 {
-             true;
+             return true;
         }
         false
     }
 
     fn end_game(&mut self) {
+        // self.print_footer_debug("Enterde end game".to_string());
         for i in 0..6 {
             self.board[self.get_player_score_pit_position(1) as usize] += self.board[i];
             self.board[i] = 0;
@@ -141,6 +168,20 @@ impl Game {
             self.board[self.get_player_score_pit_position(2) as usize] += self.board[i];
             self.board[i] = 0;
         }
+
+        let player1_point = self.board[self.get_player_score_pit_position(1) as usize];
+        let player2_point = self.board[self.get_player_score_pit_position(2) as usize];
+        let mut end_string;
+        if player1_point > player2_point {
+            end_string = format!("The winner is {}", self.player1.name.clone());
+        } else if player2_point > player1_point {
+            end_string = format!("The winner is {}", self.player2.name.clone());
+        } else {
+            end_string = "It is a draw".to_string();
+        }
+        end_string = end_string + "\nPress enter to exit.";
+        self.print_footer(end_string);
+        self.print_board();
         self.status = "end".to_string();
     }
 
@@ -194,51 +235,50 @@ impl Game {
         );
         self.print_board();
         while self.status != "end" {
-            if self.no_valid_moves_for_eather_player(){
-                self.end_game();
-                return Ok(());
-            }
-
-            if poll(Duration::from_millis(32))? {
+                if poll(Duration::from_millis(100))? {
                 match read()? {
                     Event::Key(event) => {
-                        if event.code == KeyCode::Char('c') && event.modifiers == KeyModifiers::CONTROL {
-                            exit_game()
-                        } else if event.code.is_enter() {
-                            let move_number = self.selected_pit_number.clone();
-                            self.print_footer_debug(format!("Pitt played: {}", move_number));
-                            if self.is_players_pit(self.current_player_id, move_number as usize)
-                                && (self.board[move_number as usize] != 0){
-                                self.play_move(move_number);
-                                if self.is_free_turn {
-                                    self.print_footer("It is your free move");
-                                    self.print_board();
-                                } else {
-                                    self.switch_current_player();
+                        if event.kind.is_press() {
+                            if event.code == KeyCode::Char('c') && event.modifiers == KeyModifiers::CONTROL {
+                                exit_game()
+                            } else if event.code.is_enter() {
+                                let move_number = self.selected_pit_number.clone();
+                                if self.is_players_pit(self.current_player_id, move_number as usize) && (self.board[move_number as usize] != 0) {
+                                    self.play_move(move_number);
 
-                                    current_player_name = match self.current_player_id {
-                                        id if id == self.player1.id => self.player1.name.clone(),
-                                        _ => self.player2.name.clone()
-                                    };
-                                    self.print_header(
-                                        format!("Current player name: {}", current_player_name)
-                                    );
-                                    self.print_board();
+                                    if self.no_valid_moves_for_eather_player(){
+                                            self.end_game();
+                                            return Ok(());
+                                        }
+                                    if self.is_free_turn {
+                                        self.print_footer("It is your free move".to_string());
+                                        self.print_board();
+                                    } else {
+                                        self.switch_current_player();
+
+                                        current_player_name = match self.current_player_id {
+                                            id if id == self.player1.id => self.player1.name.clone(),
+                                            _ => self.player2.name.clone()
+                                        };
+                                        self.print_header(
+                                            format!("Current player name: {}", current_player_name)
+                                        );
+                                        self.print_board();
+                                    }
+                                } else {
+                                    self.print_footer("Invalid move number".to_string());
                                 }
+                            } else if event.code.is_up() {
+                                self.move_selected_pit_up();
+                            } else if event.code.is_down() {
+                                self.move_selected_pit_down();
+                            } else if event.code.is_left() {
+                                self.move_selected_pit_left();
+                            } else if event.code.is_right() {
+                                self.move_selected_pit_right();
+                            } else {
+                                continue
                             }
-                            else {
-                                self.print_footer("Invalid move number");
-                            }
-                        } else if event.code.is_up() {
-                            self.move_selected_pit_up();
-                        } else if event.code.is_down() {
-                            self.move_selected_pit_down();
-                        } else if event.code.is_left() {
-                            self.move_selected_pit_left();
-                        } else if event.code.is_right() {
-                            self.move_selected_pit_right();
-                        } else {
-                            continue
                         }
                         self.print_board()
                     },
@@ -264,8 +304,8 @@ impl Game {
         let mut right_texted_colored:String;
 
         for i in 0..6 {
-            left = i as usize;
-            right = (12 - i) as usize;
+            left = i;
+            right = 12 - i;
 
             // lines.push(format!("{:02}║ {:02} ║ {:02} ║{:02}", i, self.board[i], self.board[12 - i], 12 - i));
 
@@ -307,7 +347,7 @@ impl Game {
         stdout.flush().unwrap();
     }
 
-    fn print_footer(&self, text: &str) {
+    fn print_footer(&self, text: String) {
         let mut stdout = stdout();
         queue!(stdout,
             MoveTo(0,13),
@@ -340,6 +380,22 @@ fn setup_game_screen(){
 
 fn exit_game(){
     let mut stdout = stdout();
+
+    loop {
+        if poll(Duration::from_millis(100)).unwrap(){
+            match read().unwrap() {
+                Event::Key(event) => {
+                    if  event.is_press(){
+                        if event.code.is_enter(){
+                            break;
+                        }
+                    }
+                }
+                _ => {continue}
+            }
+        }
+    }
+
     disable_raw_mode().unwrap();
     queue!(stdout,
         cursor::Show,
@@ -351,8 +407,8 @@ fn exit_game(){
 
 fn main() {
     setup_game_screen();
-    let mut game = Game::standard_game();
-
+    // let mut game = Game::standard_game();
+    let mut game = Game::random_game();
     game.start_game_loop().unwrap();
 
     exit_game();
