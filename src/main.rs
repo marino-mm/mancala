@@ -1,14 +1,16 @@
-use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
+use ClearType::CurrentLine;
+use crossterm::event::{Event, KeyCode, KeyModifiers, poll, read};
 use crossterm::style::{Print, Stylize};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{cursor, queue, QueueableCommand};
+use crossterm::terminal::{
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use crossterm::{QueueableCommand, cursor, queue};
 use cursor::MoveTo;
+use rand::RngExt;
 use std::io;
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::process::exit;
 use std::time::Duration;
-use ClearType::CurrentLine;
-use rand::RngExt;
 
 #[derive(PartialEq, Clone)]
 struct Player {
@@ -33,8 +35,8 @@ impl Game {
 
     fn get_pit_across(&self, pit_numb: u8) -> usize {
         match pit_numb {
-            n if n == 6 || n == 13=> {n as usize}
-            _ => (12u8 - pit_numb) as usize
+            n if n == 6 || n == 13 => n as usize,
+            _ => (12u8 - pit_numb) as usize,
         }
     }
 
@@ -51,7 +53,7 @@ impl Game {
             },
             turn: 1,
             current_player_id: 1,
-            board: [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0],
+            board: [4, 4, 4, 4, 4, 3, 0, 4, 0, 4, 4, 4, 4, 0],
             // board: [0, 0, 0, 0, 0, 1, 0, 4, 4, 4, 4, 4, 4, 0],
             status: "running".to_string(),
             is_free_turn: false,
@@ -62,19 +64,19 @@ impl Game {
     fn random_game() -> Game {
         let mut board = [0; 14];
         let mut rng = rand::rng();
-        for n in 0..6{
+        for n in 0..6 {
             let x = rng.random_range(1..=7);
             board[n] = x;
-            board[n+7] = x;
+            board[n + 7] = x;
         }
         Game {
             player1: Player {
                 id: 1,
-                name: "player1".to_string(),
+                name: "Ema".to_string(),
             },
             player2: Player {
                 id: 2,
-                name: "player2".to_string(),
+                name: "Matej".to_string(),
             },
             turn: 1,
             current_player_id: 1,
@@ -153,7 +155,7 @@ impl Game {
             }
         }
         if player1_valid_pits == 0 || player2_valid_pits == 0 {
-             return true;
+            return true;
         }
         false
     }
@@ -185,86 +187,89 @@ impl Game {
         self.status = "end".to_string();
     }
 
-    fn play_move(&mut self, pit_number: u8){
-            self.turn += 1;
-            let mut gems_number = self.board[pit_number as usize];
-            let mut current_pit = pit_number;
-            self.board[pit_number as usize] = 0;
-            while gems_number > 0 {
-                current_pit += 1;
-                current_pit = current_pit % 14;
-                if current_pit == 6 && self.current_player_id == self.player2.id {
-                    continue;
-                } else if current_pit == 13 && self.current_player_id == self.player1.id {
-                    continue;
-                } else {
-                    self.board[current_pit as usize] += 1;
-                    gems_number -= 1;
-                }
+    fn play_move(&mut self, pit_number: u8) {
+        self.turn += 1;
+        let mut gems_number = self.board[pit_number as usize];
+        let mut current_pit = pit_number;
+        self.board[pit_number as usize] = 0;
+        while gems_number > 0 {
+            current_pit += 1;
+            current_pit = current_pit % 14;
+            if current_pit == 6 && self.current_player_id == self.player2.id {
+                continue;
+            } else if current_pit == 13 && self.current_player_id == self.player1.id {
+                continue;
+            } else {
+                self.board[current_pit as usize] += 1;
+                gems_number -= 1;
             }
-            let pit_across_numb = self.get_pit_across(current_pit);
-            if self.is_free_move(current_pit) {
-                self.is_free_turn = true;
-            } else if self.board[current_pit as usize] == 1
-                && self.board[pit_across_numb] != 0
-                && self.is_players_pit(self.current_player_id, pit_number as usize)
-            {
-                let current_player = self.current_player_id;
-                let player_pit_number = self.get_player_score_pit_position(current_player);
+        }
+        let pit_across_numb = self.get_pit_across(current_pit);
+        if self.is_free_move(current_pit) {
+            self.is_free_turn = true;
+        } else if self.board[current_pit as usize] == 1
+            && self.board[pit_across_numb] != 0
+            && self.is_players_pit(self.current_player_id, current_pit as usize)
+        {
+            let current_player = self.current_player_id;
+            let player_pit_number = self.get_player_score_pit_position(current_player);
 
-                self.board[player_pit_number as usize] += 1;
-                self.board[current_pit as usize] = 0;
+            self.board[player_pit_number as usize] += 1;
+            self.board[current_pit as usize] = 0;
 
-                self.board[player_pit_number as usize] += self.board[pit_across_numb];
-                self.board[pit_across_numb] = 0;
+            self.board[player_pit_number as usize] += self.board[pit_across_numb];
+            self.board[pit_across_numb] = 0;
 
-                self.is_free_turn = false;
-            }
-            else {
-                self.is_free_turn = false;
-            }
+            self.is_free_turn = false;
+        } else {
+            self.is_free_turn = false;
+        }
     }
 
     fn start_game_loop(&mut self) -> Result<(), io::Error> {
-        let mut current_player_name:String;
+        let mut current_player_name: String;
 
         current_player_name = match self.current_player_id {
             id if id == self.player1.id => self.player1.name.clone(),
-            _ => self.player2.name.clone()
+            _ => self.player2.name.clone(),
         };
-        self.print_header(
-            format!("Current player name: {}", current_player_name)
-        );
+        self.print_header(format!("Current player name: {}", current_player_name));
         self.print_board();
         while self.status != "end" {
-                if poll(Duration::from_millis(100))? {
+            if poll(Duration::from_millis(100))? {
                 match read()? {
                     Event::Key(event) => {
                         if event.kind.is_press() {
-                            if event.code == KeyCode::Char('c') && event.modifiers == KeyModifiers::CONTROL {
+                            if event.code == KeyCode::Char('c')
+                                && event.modifiers == KeyModifiers::CONTROL
+                            {
                                 exit_game()
                             } else if event.code.is_enter() {
                                 let move_number = self.selected_pit_number.clone();
-                                if self.is_players_pit(self.current_player_id, move_number as usize) && (self.board[move_number as usize] != 0) {
+                                if self.is_players_pit(self.current_player_id, move_number as usize)
+                                    && (self.board[move_number as usize] != 0)
+                                {
                                     self.play_move(move_number);
 
-                                    if self.no_valid_moves_for_eather_player(){
-                                            self.end_game();
-                                            return Ok(());
-                                        }
+                                    if self.no_valid_moves_for_eather_player() {
+                                        self.end_game();
+                                        return Ok(());
+                                    }
                                     if self.is_free_turn {
                                         self.print_footer("It is your free move".to_string());
                                         self.print_board();
                                     } else {
                                         self.switch_current_player();
-
                                         current_player_name = match self.current_player_id {
-                                            id if id == self.player1.id => self.player1.name.clone(),
-                                            _ => self.player2.name.clone()
+                                            id if id == self.player1.id => {
+                                                self.player1.name.clone()
+                                            }
+                                            _ => self.player2.name.clone(),
                                         };
-                                        self.print_header(
-                                            format!("Current player name: {}", current_player_name)
-                                        );
+                                        self.print_header(format!(
+                                            "Current player name: {}",
+                                            current_player_name
+                                        ));
                                         self.print_board();
                                     }
                                 } else {
@@ -279,11 +284,11 @@ impl Game {
                             } else if event.code.is_right() {
                                 self.move_selected_pit_right();
                             } else {
-                                continue
+                                continue;
                             }
                         }
                         self.print_board()
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -291,118 +296,116 @@ impl Game {
         Ok(())
     }
 
-    fn print_board(&self){
+    fn print_board(&self) {
         let mut lines = Vec::<String>::with_capacity(20);
         let mut stdout = stdout();
 
         lines.push("  ╔═════════╗".to_string());
-        lines.push(format!("{:02}║    {:02}   ║{:02}", self.get_player_score_pit_position(2),self.board[self.get_player_score_pit_position(2) as usize], self.get_player_score_pit_position(2)));
+        lines.push(format!(
+            "{:02}║    {:02}   ║{:02}",
+            self.get_player_score_pit_position(2),
+            self.board[self.get_player_score_pit_position(2) as usize],
+            self.get_player_score_pit_position(2)
+        ));
         lines.push("  ╠════╦════╣".to_string());
 
-        let mut left:usize;
-        let mut right:usize;
+        let mut left: usize;
+        let mut right: usize;
 
-        let mut left_texted_colored:String;
-        let mut right_texted_colored:String;
+        let mut left_texted_colored: String;
+        let mut right_texted_colored: String;
 
         for i in 0..6 {
             left = i;
             right = 12 - i;
 
-            // lines.push(format!("{:02}║ {:02} ║ {:02} ║{:02}", i, self.board[i], self.board[12 - i], 12 - i));
-
             if i == self.selected_pit_number as usize {
-                left_texted_colored = format!("{:02}", self.board[left].to_string()).black().on_white().to_string();
+                left_texted_colored = format!("{:02}", self.board[left].to_string())
+                    .black()
+                    .on_white()
+                    .to_string();
                 right_texted_colored = self.board[right].to_string();
-            }else if 12 - i == self.selected_pit_number as usize {
-                // right_texted_colored = board[right].to_string().black().on_white().to_string();
-                right_texted_colored = format!("{:02}", self.board[right].to_string()).black().on_white().to_string();
+            } else if 12 - i == self.selected_pit_number as usize {
+                right_texted_colored = format!("{:02}", self.board[right].to_string())
+                    .black()
+                    .on_white()
+                    .to_string();
                 left_texted_colored = self.board[left].to_string();
-            }else {
+            } else {
                 right_texted_colored = self.board[right].to_string();
                 left_texted_colored = self.board[left].to_string();
             }
-            lines.push(format!("{:02}║ {:02} ║ {:02} ║{:02}", left, left_texted_colored, right_texted_colored, right));
+            lines.push(format!(
+                "{:02}║ {:02} ║ {:02} ║{:02}",
+                left, left_texted_colored, right_texted_colored, right
+            ));
         }
         lines.push("  ╠════╩════╣".to_string());
-        lines.push(format!("{:02}║    {:02}   ║{:02}", self.get_player_score_pit_position(1),self.board[self.get_player_score_pit_position(1) as usize], self.get_player_score_pit_position(1)));
+        lines.push(format!(
+            "{:02}║    {:02}   ║{:02}",
+            self.get_player_score_pit_position(1),
+            self.board[self.get_player_score_pit_position(1) as usize],
+            self.get_player_score_pit_position(1)
+        ));
         lines.push("  ╚═════════╝".to_string());
 
         queue!(stdout, MoveTo(0, 1)).unwrap();
         for line in lines {
-            queue!(stdout,
+            queue!(
+                stdout,
                 Clear(CurrentLine),
                 Print(line),
                 cursor::MoveToNextLine(1)
-            ).unwrap();
+            )
+            .unwrap();
         }
         stdout.flush().unwrap();
     }
 
     fn print_header(&self, text: String) {
         let mut stdout = stdout();
-        queue!(stdout,
-            MoveTo(0,0),
-            Clear(CurrentLine),
-            Print(text)
-        ).unwrap();
+        queue!(stdout, MoveTo(0, 0), Clear(CurrentLine), Print(text)).unwrap();
         stdout.flush().unwrap();
     }
 
     fn print_footer(&self, text: String) {
         let mut stdout = stdout();
-        queue!(stdout,
-            MoveTo(0,13),
-            Clear(CurrentLine),
-            Print(text)
-        ).unwrap();
+        queue!(stdout, MoveTo(0, 13), Clear(CurrentLine), Print(text)).unwrap();
         stdout.flush().unwrap();
     }
 
     fn print_footer_debug(&self, text: String) {
         let mut stdout = stdout();
-        queue!(stdout,
-            MoveTo(0,15),
-            Clear(CurrentLine),
-            Print(text)
-        ).unwrap();
+        queue!(stdout, MoveTo(0, 15), Clear(CurrentLine), Print(text)).unwrap();
         stdout.flush().unwrap();
     }
 }
 
-fn setup_game_screen(){
+fn setup_game_screen() {
     let mut stdout = stdout();
-    queue!(stdout,
-        EnterAlternateScreen,
-        cursor::Hide
-    ).unwrap();
+    queue!(stdout, EnterAlternateScreen, cursor::Hide).unwrap();
     enable_raw_mode().unwrap();
     stdout.flush().unwrap();
 }
 
-fn exit_game(){
+fn exit_game() {
     let mut stdout = stdout();
-
     loop {
-        if poll(Duration::from_millis(100)).unwrap(){
+        if poll(Duration::from_millis(100)).unwrap() {
             match read().unwrap() {
                 Event::Key(event) => {
-                    if  event.is_press(){
-                        if event.code.is_enter(){
+                    if event.is_press() {
+                        if event.code.is_enter() {
                             break;
                         }
                     }
                 }
-                _ => {continue}
+                _ => continue,
             }
         }
     }
-
     disable_raw_mode().unwrap();
-    queue!(stdout,
-        cursor::Show,
-        LeaveAlternateScreen
-    ).unwrap();
+    queue!(stdout, cursor::Show, LeaveAlternateScreen).unwrap();
     stdout.flush().unwrap();
     exit(0);
 }
