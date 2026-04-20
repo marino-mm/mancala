@@ -1,9 +1,13 @@
-use crossterm::style::Print;
+use std::io;
+use crossterm::style::{Print, Stylize};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, queue, QueueableCommand};
 use cursor::MoveTo;
 use std::io::{stdin, stdout, Write};
+use std::process::exit;
+use std::time::Duration;
 use ClearType::CurrentLine;
+use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
 
 #[derive(PartialEq, Clone)]
 struct Player {
@@ -18,6 +22,7 @@ struct Game {
     board: [u8; 14],
     status: String,
     is_free_turn: bool,
+    selected_pit_number: u8,
 }
 
 impl Game {
@@ -26,7 +31,10 @@ impl Game {
     }
 
     fn get_pit_across(&self, pit_numb: u8) -> usize {
-        (12 - pit_numb) as usize
+        match pit_numb {
+            n if n == 6 || n == 13=> {n as usize}
+            _ => (12u8 - pit_numb) as usize
+        }
     }
 
     fn standard_game() -> Game {
@@ -42,9 +50,47 @@ impl Game {
             },
             turn: 1,
             current_player_id: 1,
-            board: [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0],
+            //board: [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0],
+            board: [0, 0, 0, 0, 0, 1, 0, 4, 4, 4, 4, 4, 4, 0],
             status: "running".to_string(),
             is_free_turn: false,
+            selected_pit_number: 0,
+        }
+    }
+
+    fn move_selected_pit_up(&mut self) {
+        if (1..6).contains(&self.selected_pit_number) {
+            self.selected_pit_number -= 1;
+        } else if (7..12).contains(&self.selected_pit_number) {
+            self.selected_pit_number += 1;
+        }
+    }
+
+    fn move_selected_pit_left(&mut self) {
+        let n = self.selected_pit_number;
+
+        if (1..6).contains(&self.selected_pit_number) {
+            self.selected_pit_number = 13 - n
+        } else if (7..13).contains(&self.selected_pit_number) {
+            self.selected_pit_number = 12 - n
+        }
+    }
+
+    fn move_selected_pit_down(&mut self) {
+        if (0..5).contains(&self.selected_pit_number) {
+            self.selected_pit_number += 1;
+        } else if (8..13).contains(&self.selected_pit_number) {
+            self.selected_pit_number -= 1;
+        }
+    }
+
+    fn move_selected_pit_right(&mut self) {
+        let n = self.selected_pit_number;
+
+        if (0..6).contains(&n) {
+            self.selected_pit_number = 12 - n;
+        } else if (8..13).contains(&n) {
+            self.selected_pit_number = 13 - n;
         }
     }
 
@@ -68,21 +114,22 @@ impl Game {
                 && self.get_player_score_pit_position(self.player2.id) == last_pit)
     }
 
-    fn no_valid_moves_for_current_player(&self) -> bool {
-        if self.current_player_id == self.player1.id {
-            for i in 0..6 {
-                if !self.board[i] != 0 {
-                    return false;
-                }
+    fn no_valid_moves_for_eather_player(&self) -> bool {
+        let mut player1_valid_pits = 0;
+        let mut player2_valid_pits = 0;
+        for n in (0..6){
+            if self.board[n] != 0 {
+                player1_valid_pits += 1;
             }
-        } else {
-            for i in 7..13 {
-                if !self.board[i] != 0 {
-                    return false;
-                }
+            if self.board[n + 7] != 0 {
+                player2_valid_pits += 1;
             }
         }
-        true
+        print!("player1: {}, player2: {}", player1_valid_pits, player2_valid_pits);
+        if player1_valid_pits == 0 || player2_valid_pits == 0 {
+             true;
+        }
+        false
     }
 
     fn end_game(&mut self) {
@@ -114,9 +161,10 @@ impl Game {
                     gems_number -= 1;
                 }
             }
-
             let pit_across_numb = self.get_pit_across(current_pit);
-            if self.board[current_pit as usize] == 1
+            if self.is_free_move(current_pit) {
+                self.is_free_turn = true;
+            } else if self.board[current_pit as usize] == 1
                 && self.board[pit_across_numb] != 0
                 && self.is_players_pit(self.current_player_id, pit_number as usize)
             {
@@ -129,73 +177,110 @@ impl Game {
                 self.board[player_pit_number as usize] += self.board[pit_across_numb];
                 self.board[pit_across_numb] = 0;
             }
-            if self.is_free_move(current_pit) {
-                self.is_free_turn = true;
-            }
             else {
                 self.is_free_turn = false;
             }
     }
 
-    fn read_move(&self, input:&mut String) -> u8{
-        stdin().read_line(input).unwrap();
-        loop {
-            match input.trim().parse::<u8>() {
-                Ok(num) => {
-                    input.clear();
-                    return num;
-                }
-                Err(_) => {
-                    input.clear();
-                    self.print_footer("Invalid input");
-                }
-            }
-        }
-    }
+    fn start_game_loop(&mut self) -> Result<(), io::Error> {
+        let mut current_player_name:String;
 
-    fn start_game_loop(&mut self) {
-        let mut input = String::new();
-        let mut move_number = 0;
-
+        current_player_name = match self.current_player_id {
+            id if id == self.player1.id => self.player1.name.clone(),
+            _ => self.player2.name.clone()
+        };
+        self.print_header(
+            format!("Current player name: {}", current_player_name)
+        );
         self.print_board();
         while self.status != "end" {
-
-            if self.no_valid_moves_for_current_player(){
+            if self.no_valid_moves_for_eather_player(){
                 self.end_game();
-                return;
+                return Ok(());
             }
 
-            move_number = self.read_move(&mut input);
-            if self.is_players_pit(self.current_player_id, move_number as usize)
-            && (self.board[move_number as usize] != 0){
-                self.play_move(move_number);
-            }
-            else {
-                self.print_footer("Invalid move number");
-            }
+            if poll(Duration::from_millis(32))? {
+                match read()? {
+                    Event::Key(event) => {
+                        if event.code == KeyCode::Char('c') && event.modifiers == KeyModifiers::CONTROL {
+                            exit_game()
+                        } else if event.code.is_enter() {
+                            let move_number = self.selected_pit_number.clone();
+                            self.print_footer_debug(format!("Pitt played: {}", move_number));
+                            if self.is_players_pit(self.current_player_id, move_number as usize)
+                                && (self.board[move_number as usize] != 0){
+                                self.play_move(move_number);
+                                if self.is_free_turn {
+                                    self.print_footer("It is your free move");
+                                    self.print_board();
+                                } else {
+                                    self.switch_current_player();
 
-            if self.is_free_turn {
-                self.print_footer("It is your free move");
-                self.print_board();
-            } else {
-                self.switch_current_player();
-                self.print_board();
+                                    current_player_name = match self.current_player_id {
+                                        id if id == self.player1.id => self.player1.name.clone(),
+                                        _ => self.player2.name.clone()
+                                    };
+                                    self.print_header(
+                                        format!("Current player name: {}", current_player_name)
+                                    );
+                                    self.print_board();
+                                }
+                            }
+                            else {
+                                self.print_footer("Invalid move number");
+                            }
+                        } else if event.code.is_up() {
+                            self.move_selected_pit_up();
+                        } else if event.code.is_down() {
+                            self.move_selected_pit_down();
+                        } else if event.code.is_left() {
+                            self.move_selected_pit_left();
+                        } else if event.code.is_right() {
+                            self.move_selected_pit_right();
+                        } else {
+                            continue
+                        }
+                        self.print_board()
+                    },
+                    _ => {}
+                }
             }
-
         }
+        Ok(())
     }
 
     fn print_board(&self){
-
-        let selected_pit_number = 0u8;
         let mut lines = Vec::<String>::with_capacity(20);
         let mut stdout = stdout();
 
         lines.push("  ╔═════════╗".to_string());
         lines.push(format!("{:02}║    {:02}   ║{:02}", self.get_player_score_pit_position(2),self.board[self.get_player_score_pit_position(2) as usize], self.get_player_score_pit_position(2)));
         lines.push("  ╠════╦════╣".to_string());
+
+        let mut left:usize;
+        let mut right:usize;
+
+        let mut left_texted_colored:String;
+        let mut right_texted_colored:String;
+
         for i in 0..6 {
-            lines.push(format!("{:02}║ {:02} ║ {:02} ║{:02}", i, self.board[i], self.board[12 - i], 12 - i));
+            left = i as usize;
+            right = (12 - i) as usize;
+
+            // lines.push(format!("{:02}║ {:02} ║ {:02} ║{:02}", i, self.board[i], self.board[12 - i], 12 - i));
+
+            if i == self.selected_pit_number as usize {
+                left_texted_colored = format!("{:02}", self.board[left].to_string()).black().on_white().to_string();
+                right_texted_colored = self.board[right].to_string();
+            }else if 12 - i == self.selected_pit_number as usize {
+                // right_texted_colored = board[right].to_string().black().on_white().to_string();
+                right_texted_colored = format!("{:02}", self.board[right].to_string()).black().on_white().to_string();
+                left_texted_colored = self.board[left].to_string();
+            }else {
+                right_texted_colored = self.board[right].to_string();
+                left_texted_colored = self.board[left].to_string();
+            }
+            lines.push(format!("{:02}║ {:02} ║ {:02} ║{:02}", left, left_texted_colored, right_texted_colored, right));
         }
         lines.push("  ╠════╩════╣".to_string());
         lines.push(format!("{:02}║    {:02}   ║{:02}", self.get_player_score_pit_position(1),self.board[self.get_player_score_pit_position(1) as usize], self.get_player_score_pit_position(1)));
@@ -231,6 +316,16 @@ impl Game {
         ).unwrap();
         stdout.flush().unwrap();
     }
+
+    fn print_footer_debug(&self, text: String) {
+        let mut stdout = stdout();
+        queue!(stdout,
+            MoveTo(0,15),
+            Clear(CurrentLine),
+            Print(text)
+        ).unwrap();
+        stdout.flush().unwrap();
+    }
 }
 
 fn setup_game_screen(){
@@ -247,16 +342,18 @@ fn exit_game(){
     let mut stdout = stdout();
     disable_raw_mode().unwrap();
     queue!(stdout,
+        cursor::Show,
         LeaveAlternateScreen
     ).unwrap();
     stdout.flush().unwrap();
+    exit(0);
 }
 
 fn main() {
     setup_game_screen();
     let mut game = Game::standard_game();
 
-    game.start_game_loop();
+    game.start_game_loop().unwrap();
 
     exit_game();
 }
