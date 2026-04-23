@@ -1,14 +1,12 @@
-use ClearType::CurrentLine;
-use crossterm::event::{Event, KeyCode, KeyModifiers, poll, read};
-use crossterm::style::{Print, Stylize};
-use crossterm::terminal::{
-    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
-use crossterm::{QueueableCommand, cursor, queue};
-use cursor::MoveTo;
+use crossterm::cursor::MoveTo;
+use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
+use crossterm::style::{Print, ResetColor, Stylize};
+use crossterm::terminal::ClearType::CurrentLine;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::{cursor, queue, QueueableCommand};
 use rand::RngExt;
 use std::io;
-use std::io::{Write, stdout};
+use std::io::{stdout, Write};
 use std::process::exit;
 use std::time::Duration;
 
@@ -239,12 +237,13 @@ impl Game {
             if poll(Duration::from_millis(100))? {
                 match read()? {
                     Event::Key(event) => {
-                        if event.kind.is_press() {
+                        if event.is_press() {
                             if event.code == KeyCode::Char('c')
                                 && event.modifiers == KeyModifiers::CONTROL
                             {
                                 exit_game()
                             } else if event.code.is_enter() {
+                                self.print_footer("".to_string());
                                 let move_number = self.selected_pit_number.clone();
                                 if self.is_players_pit(self.current_player_id, move_number as usize)
                                     && (self.board[move_number as usize] != 0)
@@ -349,6 +348,7 @@ impl Game {
         ));
         lines.push("  ╚═════════╝".to_string());
 
+        // queue!(stdout, SetColors(Colors::new(Green, Black))).unwrap();
         queue!(stdout, MoveTo(0, 1)).unwrap();
         for line in lines {
             queue!(
@@ -359,6 +359,7 @@ impl Game {
             )
             .unwrap();
         }
+        queue!(stdout, ResetColor).unwrap();
         stdout.flush().unwrap();
     }
 
