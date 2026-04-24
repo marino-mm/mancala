@@ -1,12 +1,12 @@
 use crate::app::App;
-use crossterm::cursor::{MoveRight, MoveTo, MoveToNextLine};
-use crossterm::event::{Event, KeyModifiers};
-use crossterm::style::{Print, ResetColor, SetBackgroundColor, SetForegroundColor};
-use crossterm::terminal::{Clear, ClearType};
-use crossterm::queue;
-use std::io::{stdout, Write};
 use crate::screen::exit_screen::ExitScreen;
 use crate::screen::state::State;
+use crossterm::cursor::{MoveRight, MoveTo, MoveToNextLine};
+use crossterm::event::{Event, KeyModifiers};
+use crossterm::queue;
+use crossterm::style::{Print, SetStyle};
+use crossterm::terminal::{Clear, ClearType};
+use std::io::{stdout, Write};
 
 pub struct MainMenu {
     selected_index: usize,
@@ -38,6 +38,7 @@ impl State for MainMenu {
 ██║ ╚═╝ ██║██║  ██║██║ ╚████║╚██████╗██║  ██║███████╗██║  ██║
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝";
         queue!(stdout,
+            SetStyle(app.theme.get_content_style()),
             Clear(ClearType::All),
             MoveTo(0, 0),
         ).unwrap();
@@ -65,10 +66,9 @@ impl State for MainMenu {
                 queue!(stdout,
                     Clear(ClearType::CurrentLine),
                     MoveRight(((w/2) as usize - item_width_half) as u16),
-                    SetForegroundColor(app.theme.background),
-                    SetBackgroundColor(app.theme.foreground),
+                    SetStyle(app.theme.get_highlight_style()),
                     Print(item),
-                    ResetColor,
+                    SetStyle(app.theme.get_content_style()),
                     MoveToNextLine(1)
                 ).unwrap();
             }
@@ -76,6 +76,7 @@ impl State for MainMenu {
                 queue!(stdout,
                     Clear(ClearType::CurrentLine),
                     MoveRight(((w/2) as usize - item_width_half) as u16),
+                    SetStyle(app.theme.get_content_style()),
                     Print(item),
                     MoveToNextLine(1)
                 ).unwrap();

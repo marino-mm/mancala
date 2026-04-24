@@ -1,33 +1,28 @@
+use crate::theme::Theme;
 use crossterm::cursor::{Hide, MoveTo, Show};
-use crossterm::execute;
-use crossterm::style::Color;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use std::io::stdout;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, SetTitle};
+use crossterm::{execute, queue};
+use std::io::{stdout, Write};
 
 pub struct App{
     pub running: bool,
     pub theme: Theme
 }
-
-pub struct Theme{
-    pub foreground: Color,
-    pub background: Color,
-}
-
 impl App {
     pub fn new() -> Self {
         let mut stdout = stdout();
-        execute!(stdout,
+        queue!(stdout,
             EnterAlternateScreen,
-            Clear(ClearType::Purge),
+            Clear(ClearType::All),
+            SetTitle("Mancala"),
             MoveTo(0, 0),
             Hide
         ).unwrap();
         enable_raw_mode().expect("TODO: panic message");
+        stdout.flush().unwrap();
         App {
             running: true,
-            // theme: Theme{foreground: Color::White, background: Color::Black},
-            theme: Theme{foreground: Color::Red, background: Color::Yellow},
+            theme: Theme::ema()
         }
     }
 }

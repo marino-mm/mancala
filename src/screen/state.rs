@@ -6,9 +6,3 @@ pub trait State {
     fn handel_input(self: Box<Self>, event: Event, app: &mut App) -> Box<dyn State>;
     fn render_next(&self, app: &mut App) -> bool;
 }
-
-pub struct GameScreen {}
-
-pub struct Settings {}
-
-
