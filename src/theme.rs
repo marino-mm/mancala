@@ -37,10 +37,10 @@ impl Theme {
 
     pub fn ema() -> Theme {
         Theme{
-            foreground: Color::Cyan,
-            background: Color::Rgb { r: 0xd7, g: 0xba, b: 89 },
-            highlighted_foreground: Color::Red,
-            highlighted_background: Color::Blue,
+            foreground: Color::Rgb { r: 0x9a, g: 0x78, b: 0x4f },
+            background: Color::Rgb { r: 0x43, g: 0x26, b: 0x16 },
+            highlighted_foreground: Color::Rgb { r: 0x43, g: 0x26, b: 0x16 },
+            highlighted_background: Color::Rgb { r: 0x9a, g: 0x78, b: 0x4f },
         }
     }
 }

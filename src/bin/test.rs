@@ -2,8 +2,8 @@ use crossterm::event::{poll, read};
 use mancala::app::App;
 use mancala::screen::main_menu::MainMenu;
 use mancala::screen::state::State;
-use std::time::{Duration, Instant};
 use std::io;
+use std::time::{Duration, Instant};
 
 fn start_game() -> io::Result<()>{
     let mut app = App::new();

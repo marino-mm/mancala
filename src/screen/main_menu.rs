@@ -2,24 +2,62 @@ use crate::app::App;
 use crate::screen::exit_screen::ExitScreen;
 use crate::screen::state::State;
 use crossterm::cursor::{MoveRight, MoveTo, MoveToNextLine};
-use crossterm::event::{Event, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::queue;
 use crossterm::style::{Print, SetStyle};
 use crossterm::terminal::{Clear, ClearType};
 use std::io::{stdout, Write};
+use rustc_hash::FxHashMap;
+use crate::screen::game_screen::GameScreen;
+use crate::screen::settings_screen::Settings;
 
 pub struct MainMenu {
     selected_index: usize,
     render_next: bool,
     menu_items: Vec<&'static str>,
+    bindings: FxHashMap<KeyEvent, fn(Box<MainMenu>) -> Box<dyn State>>,
 }
 
 impl MainMenu {
     pub fn new() -> MainMenu {
+        let mut bindings:FxHashMap<KeyEvent, fn(Box<MainMenu>) -> Box<dyn State>> = FxHashMap::default();
+        bindings.insert(KeyEvent::new(KeyCode::Up, KeyModifiers::empty()), MainMenu::handel_up);
+        bindings.insert(KeyEvent::new(KeyCode::Down, KeyModifiers::empty()), MainMenu::handel_down);
+        bindings.insert(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL), MainMenu::handel_exit);
+        bindings.insert(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()), MainMenu::handel_enter);
+
         MainMenu {
             selected_index: 0,
             render_next: true,
             menu_items: vec!["Start Game", "Settings", "Exit"],
+            bindings,
+        }
+    }
+    pub fn handel_up(mut self: Box<Self>) -> Box<dyn State> {
+        if self.selected_index > 0{
+            self.selected_index -= 1;
+            self.render_next = true;
+        }
+        self
+    }
+
+    pub fn handel_down(mut self: Box<Self>) -> Box<dyn State> {
+        if self.selected_index < self.menu_items.len() -1{
+            self.selected_index += 1;
+            self.render_next = true;
+        }
+        self
+    }
+
+    pub fn handel_exit(self: Box<Self>) -> Box<dyn State> {
+        Box::new(ExitScreen::new())
+    }
+    pub fn handel_enter(self: Box<Self>) -> Box<dyn State> {
+        match self.selected_index {
+            0 => { Box::new(GameScreen::new()) },
+            1 => { Box::new(Settings::new()) },
+            2 => { Box::new(ExitScreen::new()) },
+            _ => self
         }
     }
 }
@@ -40,7 +78,7 @@ impl State for MainMenu {
         queue!(stdout,
             SetStyle(app.theme.get_content_style()),
             Clear(ClearType::All),
-            MoveTo(0, 0),
+            MoveTo(0, 2),
         ).unwrap();
 
 
@@ -84,27 +122,14 @@ impl State for MainMenu {
         }
         stdout.flush().unwrap();
     }
-
-    fn handel_input(mut self: Box<Self>, event: Event<>, _app: &mut App) -> Box<dyn State> {
+    fn handel_input(self: Box<Self>, event: Event<>, _app: &mut App) -> Box<dyn State> {
         match event {
             Event::Key(event) => {
                 if event.is_press(){
-                    if event.code.is_char('c') && event.modifiers == KeyModifiers::CONTROL{
-                        return Box::new(ExitScreen::new())
-                    } else if event.code.is_down(){
-                        if self.selected_index < self.menu_items.len() -1{
-                            self.selected_index += 1;
-                            self.render_next = true;
-                        }
-                        return self
-                    } else if event.code.is_up(){
-                        if self.selected_index > 0{
-                            self.selected_index -= 1;
-                            self.render_next = true;
-                        }
-                        return self
+                    return match self.bindings.get(&event) {
+                        Some(func) => { func(self) },
+                        None => { self }
                     }
-                    return self
                 }
                 self
             }

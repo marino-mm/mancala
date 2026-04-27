@@ -18,11 +18,12 @@ impl App {
             MoveTo(0, 0),
             Hide
         ).unwrap();
-        enable_raw_mode().expect("TODO: panic message");
+        enable_raw_mode().unwrap();
         stdout.flush().unwrap();
         App {
             running: true,
-            theme: Theme::ema()
+            // theme: Theme::ema()
+            theme: Theme::default(),
         }
     }
 }
