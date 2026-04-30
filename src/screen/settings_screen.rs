@@ -13,8 +13,9 @@ use std::io::{stdout, Write};
 
 pub struct Settings {
     bindings: FxHashMap<KeyEvent, fn(Box<Settings>) -> Box<dyn State>>,
-    theme_list: Vec<Theme>,
-    theme_list_index: usize,
+    theme_list_window: ThemeListWindow,
+    render_next: bool,
+    theme_is_selected: bool,
 }
 
 impl Settings {
@@ -22,13 +23,14 @@ impl Settings {
         let mut bindings:FxHashMap<KeyEvent, fn(Box<Settings>) -> Box<dyn State>> = FxHashMap::default();
         bindings.insert(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL), Settings::exit_app);
         bindings.insert(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), Settings::main_menu);
-
-        let theme_list: Vec<Theme> = Settings::load_stored_themes();
+        bindings.insert(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), Settings::move_up);
+        bindings.insert(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), Settings::move_down);
 
         Settings{
             bindings,
-            theme_list,
-            theme_list_index: 0,
+            theme_list_window: ThemeListWindow::new(),
+            render_next: true,
+            theme_is_selected: false,
         }
     }
     pub fn main_menu(self: Box<Settings>) -> Box<dyn State> {
@@ -37,21 +39,26 @@ impl Settings {
     pub fn exit_app(self: Box<Settings>) -> Box<dyn State> {
         Box::new(ExitScreen::new())
     }
-    pub fn load_stored_themes() -> Vec<Theme> {
-        let mut theme_list: Vec<Theme> = Vec::with_capacity(10);
-        theme_list.push(Theme::default());
-        theme_list.push(Theme::ema());
-        theme_list
+    pub fn print_theme_list(self, app: &App) {
+        self.theme_list_window.print_window(app);
     }
-
-    pub fn print_theme_list(&mut self, app: &App) {
-        let mut window = ThemeListWindow::new(&self.theme_list);
-        window.print_window(app);
+    fn move_up(mut self: Box<Self>) -> Box<dyn State>{
+        self.theme_list_window.move_theme_list_index_up(&mut self.render_next);
+        self
+    }
+    fn move_down(mut self: Box<Self>) -> Box<dyn State>{
+        self.theme_list_window.move_theme_list_index_down(&mut self.render_next);
+        self
+    }
+    fn select_theme(mut self: Box<Self>) -> Box<dyn State> {
+        self.theme_is_selected = true;
+        self
     }
 }
 
 impl State for Settings {
     fn render(&mut self,app: &App) {
+        self.render_next = !self.render_next;
         let mut stdout = stdout();
         let (_w, _h) = terminal::size().unwrap();
         let _current_theme = &app.theme;
@@ -59,7 +66,7 @@ impl State for Settings {
             stdout,
             Clear(ClearType::All),
         ).unwrap();
-        self.print_theme_list(&app);
+        self.theme_list_window.print_window(&app);
         stdout.flush().unwrap();
     }
 
@@ -67,9 +74,15 @@ impl State for Settings {
         match event {
             Event::Key(event) => {
                 if event.is_press(){
-                    return match self.bindings.get(&event) {
-                        Some(func) => { func(self) },
-                        None => { self }
+                    if !self.theme_is_selected {
+                        return match self.bindings.get(&event) {
+                            Some(func) => { func(self) },
+                            None => { self }
+                        }
+                    }
+                    else {
+                        //TODO Need to pass event to selected window to handle input
+                        return self
                     }
                 }
                 self
@@ -79,45 +92,51 @@ impl State for Settings {
     }
 
     fn render_next(&self, _app: &mut App) -> bool {
-        true
+        self.render_next
     }
 }
 
 
-struct ThemeListWindow<'a>{
+struct ThemeListWindow<>{
     window_width: u16,
     window_height: u16,
     starting_position_width: u16,
     starting_position_height: u16,
-    theme_list: &'a Vec<Theme>,
+    theme_list: Vec<Theme>,
     theme_list_index: u16,
 }
 
-impl ThemeListWindow<'_>{
-    fn new(theme_list_window: &'_ Vec<Theme>) -> ThemeListWindow<'_>{
+impl ThemeListWindow{
+    fn new() -> ThemeListWindow{
+        let mut theme_list: Vec<Theme> = Vec::with_capacity(10);
+        theme_list.push(Theme::default());
+        theme_list.push(Theme::ema());
+
         ThemeListWindow{
             window_width: 22,
             window_height: 15,
             starting_position_width: 0,
             starting_position_height: 0,
-            theme_list: theme_list_window,
+            theme_list: theme_list,
             theme_list_index: 0,
         }
     }
 
-    fn move_theme_list_index_up(&mut self){
+    fn move_theme_list_index_up(&mut self, render_next: &mut bool){
         if self.theme_list_index > 0{
             self.theme_list_index -= 1;
+            *render_next = true;
         }
     }
 
-    fn move_theme_list_index_down(&mut self){
+    fn move_theme_list_index_down(&mut self, render_next: &mut bool){
         if self.theme_list_index + 1 < self.theme_list.len() as u16 {
             self.theme_list_index += 1;
+            *render_next = true;
         }
     }
 
-    fn print_window(&mut self, app: &App){
+    fn print_window(&self, app: &App){
         let content_width = (self.window_width -2) as usize;
 
         let border_top = format!("╔{}╗", "═".repeat(content_width));
