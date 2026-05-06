@@ -10,12 +10,19 @@ pub struct Theme{
 }
 impl Default for Theme {
     fn default() -> Self {
+        // Theme{
+        //     name: "default".into(),
+        //     foreground: Color::White,
+        //     background: Color::Black,
+        //     highlighted_foreground: Color::Black,
+        //     highlighted_background: Color::White,
+        // }
         Theme{
-            name: "default".into(),
-            foreground: Color::White,
-            background: Color::Black,
-            highlighted_foreground: Color::Black,
-            highlighted_background: Color::White,
+                name: "default".into(),
+                foreground: Color::Rgb {r: 255, g: 255, b: 255},
+                background: Color::Rgb {r: 0, g: 0, b: 0},
+                highlighted_foreground: Color::Rgb {r: 0, g: 0, b: 0},
+                highlighted_background: Color::Rgb {r: 255, g: 255, b: 255},
         }
     }
 }
@@ -52,5 +59,11 @@ impl Theme {
             highlighted_foreground: Color::Rgb { r: 0x43, g: 0x26, b: 0x16 },
             highlighted_background: Color::Rgb { r: 0x9a, g: 0x78, b: 0x4f },
         }
+    }
+}
+pub fn color_to_rgb(color: &Color) -> (u8, u8, u8) {
+    match color {
+        Color::Rgb { r, g, b } => (*r, *g, *b),
+        _ => panic!("Please use rgb format of colors")
     }
 }
