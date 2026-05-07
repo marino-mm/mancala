@@ -1,3 +1,3 @@
 pub mod screen;
 pub mod app;
-mod theme;
+pub mod theme;

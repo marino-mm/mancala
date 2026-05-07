@@ -1,6 +1,9 @@
+use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
-use crossterm::style::{Color, ContentStyle};
+use std::rc::Rc;
+use crossterm::style::{Color, ContentStyle, StyledContent};
 
+#[derive(Debug, Clone)]
 pub struct Theme{
     pub name: String,
     pub foreground: Color,
@@ -65,5 +68,29 @@ pub fn color_to_rgb(color: &Color) -> (u8, u8, u8) {
     match color {
         Color::Rgb { r, g, b } => (*r, *g, *b),
         _ => panic!("Please use rgb format of colors")
+    }
+}
+
+
+pub struct SelectableText{
+    text: String,
+    is_highlighted: bool,
+    current_theme: Theme
+}
+
+impl SelectableText{
+
+    pub fn new(text: String, is_highlighted: bool, theme: Theme) -> SelectableText{
+        SelectableText{text, is_highlighted, current_theme: theme}
+    }
+    pub fn get_styled_content(&self) -> StyledContent<String> {
+        match self.is_highlighted{
+            true => {
+                StyledContent::new(self.current_theme.get_highlight_style(), self.text.clone())
+            }
+            false => {
+                StyledContent::new(self.current_theme.get_content_style(), self.text.clone())
+            }
+        }
     }
 }

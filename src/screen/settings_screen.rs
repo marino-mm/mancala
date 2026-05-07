@@ -2,14 +2,15 @@ use crate::app::App;
 use crate::screen::exit_screen::ExitScreen;
 use crate::screen::main_menu::MainMenu;
 use crate::screen::state::State;
-use crate::theme::{color_to_rgb, Theme};
+use crate::theme::{color_to_rgb, SelectableText, Theme};
 use crossterm::cursor::{MoveTo, MoveToColumn, MoveToNextLine};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::style::{Color, Print, SetBackgroundColor, SetStyle};
+use crossterm::style::{Color, Print, SetBackgroundColor, SetStyle, StyledContent};
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::{queue, terminal};
 use rustc_hash::FxHashMap;
 use std::io::{stdout, Write};
+use std::rc::Rc;
 
 pub struct Settings {
     bindings: FxHashMap<KeyEvent, fn(Box<Settings>) -> Box<dyn State>>,
@@ -164,7 +165,6 @@ impl ThemeListWindow{
 
         let border_top = format!("╔{}╗", "═".repeat(content_width));
         let border_bottom = format!("╚{}╝", "═".repeat(content_width));
-
         queue!(
             stdout(),
             Clear(ClearType::All),
@@ -222,6 +222,7 @@ struct ThemeDetailWindow{
     window_height: u16,
     starting_position_width: u16,
     starting_position_height: u16,
+    selected_index: u16,
 }
 
 impl ThemeDetailWindow {
@@ -237,6 +238,7 @@ impl ThemeDetailWindow{
             window_height: 15,
             starting_position_width: 24,
             starting_position_height: 0,
+            selected_index: 0
         }
     }
 
@@ -248,6 +250,36 @@ impl ThemeDetailWindow{
         let border_top = format!("╔{}╗", "═".repeat(content_width));
         let border_bottom = format!("╚{}╝", "═".repeat(content_width));
 
+        let mut display_variable_list: Vec<String> = Vec::with_capacity(20);
+        let (mut r,mut g,mut b): (u8, u8, u8);
+        let theme_colors = vec![
+            &current_theme.foreground,
+            &current_theme.background,
+            &current_theme.highlighted_foreground,
+            &current_theme.highlighted_background,
+        ];
+        for color in theme_colors {
+            (r, g, b) = color_to_rgb(color);
+            display_variable_list.push(format!("{: >3}", r));
+            display_variable_list.push(format!("{: >3}", g));
+            display_variable_list.push(format!("{: >3}", b));
+        }
+
+        let display_variable_iterator = display_variable_list
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                    SelectableText::new(
+                        c.clone(),
+                        i == self.selected_index as usize,
+                        current_theme.clone(),
+                    ).get_styled_content()
+            })
+            .collect::<Vec<StyledContent<String>>>()
+            .iter();
+
+
+
         queue!(
             stdout(),
             // Clear(ClearType::All),
@@ -257,7 +289,7 @@ impl ThemeDetailWindow{
             MoveToColumn(self.starting_position_width)
         ).unwrap();
 
-        let (mut r,mut g,mut b): (u8, u8, u8);
+
         let mut display_line: String;
         let mut lines : Vec<(String, &Color)> = Vec::new();
 
