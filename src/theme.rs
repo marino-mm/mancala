@@ -1,7 +1,5 @@
-use std::cell::RefCell;
-use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 use crossterm::style::{Color, ContentStyle, StyledContent};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone)]
 pub struct Theme{

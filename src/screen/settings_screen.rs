@@ -10,7 +10,6 @@ use crossterm::terminal::{Clear, ClearType};
 use crossterm::{queue, terminal};
 use rustc_hash::FxHashMap;
 use std::io::{stdout, Write};
-use std::rc::Rc;
 
 pub struct Settings {
     bindings: FxHashMap<KeyEvent, fn(Box<Settings>) -> Box<dyn State>>,
