@@ -129,6 +129,7 @@ impl ThemeListWindow{
         let mut theme_list: Vec<Theme> = Vec::with_capacity(10);
         theme_list.push(Theme::default());
         theme_list.push(Theme::ema());
+        theme_list.push(Theme::ema_2());
 
         let mut bindings:FxHashMap<KeyEvent, fn(&mut ThemeListWindow, &mut bool)> = FxHashMap::default();
         bindings.insert(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), ThemeListWindow::move_theme_list_index_up);

@@ -61,6 +61,16 @@ impl Theme {
             highlighted_background: Color::Rgb { r: 0x9a, g: 0x78, b: 0x4f },
         }
     }
+
+    pub fn ema_2() -> Theme {
+        Theme{
+            name: "Ema_2".to_string(),
+            foreground: Color::Rgb { r: 0xff, g: 0x0, b: 0xff },
+            background: Color::Rgb { r: 0x75, g: 0x01, b: 0x37 },
+            highlighted_foreground: Color::Rgb { r: 0xdb, g: 0x76, b: 0xab },
+            highlighted_background: Color::Rgb { r: 0x80, g: 0x0f, b: 0x50 },
+        }
+    }
 }
 pub fn color_to_rgb(color: &Color) -> (u8, u8, u8) {
     match color {

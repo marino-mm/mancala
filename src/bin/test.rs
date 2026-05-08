@@ -4,9 +4,11 @@ use mancala::screen::main_menu::MainMenu;
 use mancala::screen::state::State;
 use std::io;
 use std::time::{Duration, Instant};
+use mancala::theme::Theme;
 
 fn start_game() -> io::Result<()>{
     let mut app = App::new();
+    app.theme = Theme::ema_2(); 
     let mut state:Box<dyn State> = Box::new(MainMenu::new());
 
     let target_fps = 60;
