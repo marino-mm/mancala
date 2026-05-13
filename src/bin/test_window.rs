@@ -15,11 +15,17 @@ fn main(){
     let mut stdout = stdout();
 
     // let mut input_field = InputTextField::new("".into(), 25, false, app.theme.clone());
+    // let mut input_field: Rc<RefCell<Box<dyn HandleKeypress>>> =
+    //     Rc::new(
+    //         RefCell::new(
+    //             Box::new(
+    //                 InputTextField::new("".into(), 25, false, app.theme.clone())
+    //     )));
     let mut input_field: Rc<RefCell<Box<dyn HandleKeypress>>> =
         Rc::new(
             RefCell::new(
                 Box::new(
-                    InputTextField::new("".into(), 25, false, app.theme.clone())
+                    InputNumberField::new(0, 10, false, app.theme.clone())
         )));
     let mut selected_element_stack:Vec<Rc<RefCell<Box<dyn HandleKeypress>>>> = Vec::with_capacity(10);
     selected_element_stack.push(input_field.clone());
@@ -68,12 +74,6 @@ struct InputTextField{
     theme: Theme,
 }
 
-impl InputTextField{
-    pub fn new(text: String, max_width:usize, is_highlighted: bool, theme: Theme) -> InputTextField{
-        InputTextField{text, max_width, is_highlighted, theme}
-    }
-}
-
 impl HandleKeypress for InputTextField{
     fn handle_keypress(&mut self, key: KeyEvent){
         match key.code.as_char() {
@@ -85,13 +85,15 @@ impl HandleKeypress for InputTextField{
                 }
             }
         }
-        if key.code.is_backspace(){
+        if key.code.is_backspace() | key.code.is_delete(){
             self.text.pop();
         }
         execute!(
             stdout(),
             MoveTo(0, 1),
-            Clear(ClearType::CurrentLine),
+            // Clear(ClearType::CurrentLine),
+            Print(String::from(" ").repeat(self.max_width)),
+            MoveTo(0, 1),
             Print(format!("{:?}", key)),
         ).expect("Error putting content into queue");
     }
@@ -103,6 +105,124 @@ impl HandleKeypress for InputTextField{
             }
             false => {
                 StyledContent::new(self.theme.get_content_style(), self.text.clone())
+            }
+        }
+    }
+}
+
+impl InputTextField{
+    fn default() -> InputTextField{
+        InputTextField{
+            text: String::default(),
+            max_width: 50,
+            is_highlighted: false,
+            theme: Default::default(),
+        }
+    }
+    fn new(text: String, max_width: usize, is_highlighted: bool, theme: Theme) -> InputTextField{
+        InputTextField{
+            text,
+            max_width,
+            is_highlighted,
+            theme,
+        }
+    }
+    fn change_max_width(&mut self, max_width:usize){
+        self.max_width = max_width;
+        while self.max_width < self.text.chars().count(){
+            self.text.remove(0);
+        }
+    }
+}
+
+struct InputNumberField{
+    content_number: i128,
+    max_width: usize,
+    is_highlighted: bool,
+    theme: Theme,
+}
+
+impl InputNumberField {
+    fn new(starting_number: i128, max_width: usize, is_highlighted: bool, theme: Theme) -> InputNumberField {
+        InputNumberField{
+            content_number: starting_number,
+            max_width,
+            is_highlighted,
+            theme,
+        }
+    }
+}
+
+impl HandleKeypress for InputNumberField{
+    fn handle_keypress(&mut self, key: KeyEvent) {
+        match key.code.as_char() {
+            None => {}
+            Some(c) => {
+                // if  c.is_digit(10){
+                // self.content_number *= 10;
+                // self.content_number += c as i128;
+                // }
+                match c.to_digit(10){
+                    None => {}
+                    Some(n) => {
+                        self.content_number *= 10;
+                        if self.content_number >= 0{
+                            self.content_number += n as i128;
+                        }
+                        else {
+                            self.content_number -= n as i128;
+                        }
+                    }
+                }
+                if c == '-'{
+                    if self.content_number > 0{
+                        self.content_number *= -1;
+                    }
+                }
+                if c == '+'{
+                    if self.content_number < 0{
+                        self.content_number *= -1;
+                    }
+                }
+                let mut number_text:String = String::with_capacity(128);
+                loop {
+                    number_text.clear();
+                    number_text = self.content_number.to_string();
+                    if self.max_width > number_text.chars().count(){
+                        break;
+                    }
+                    else {
+                        if self.content_number > 0 {
+                            self.content_number %= 10_i128.pow(self.max_width as u32 - 1 );
+                        }
+                        if self.content_number < 0{
+                            self.content_number %= 10_i128.pow(self.max_width as u32 - 2 );
+                        }
+                    }
+                }
+
+            }
+        }
+        if key.code.is_backspace() | key.code.is_delete(){
+            self.content_number /= 10;
+        }
+        execute!(
+            stdout(),
+            MoveTo(0, 2),
+            // Clear(ClearType::CurrentLine),
+            Print(String::from(" ").repeat(self.max_width)),
+            MoveTo(0, 2),
+            Print(format!("{:?}", key)),
+        ).expect("Error putting content into queue");
+    }
+
+    fn get_styled_content(&self) -> StyledContent<String> {
+        match self.is_highlighted{
+            true => {
+                StyledContent::new(self.theme.get_highlight_style(), self.content_number.to_string())
+            }
+            false => {
+                StyledContent::new(self.theme.get_content_style(), self.content_number.to_string())
             }
         }
     }
