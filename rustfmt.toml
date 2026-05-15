@@ -1,0 +1,6 @@
+max_width = 120
+hard_tabs = true
+#imports_granularity = "Module"
+#merge_imports = true
+#overflow_delimited_expr = true
+#group_imports = "StdExternalCrate"
