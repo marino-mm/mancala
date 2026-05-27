@@ -1,12 +1,12 @@
 use crossterm::cursor::MoveTo;
 use crossterm::event::{poll, read, Event, KeyEvent, KeyModifiers};
-use crossterm::execute;
-use crossterm::style::{Print, PrintStyledContent, StyledContent};
+use crossterm::{execute, queue};
+use crossterm::style::{ContentStyle, Print, PrintStyledContent, StyledContent};
 use crossterm::terminal::{Clear, ClearType};
 use mancala::app::App;
 use mancala::theme::Theme;
 use std::cell::RefCell;
-use std::io::{stdout, Write};
+use std::io::{stdout, Stdout, Write};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -18,16 +18,30 @@ fn main() {
 	    Rc::new(
 	        RefCell::new(
 	            Box::new(
-	                InputTextField::new("".into(), 25, false, app.theme.clone())
+	                InputTextField{
+						row: 0,
+		                column: 0,
+		                width: 5,
+		                height: 2,
+		                text: "".to_string(),
+		                is_highlighted: true,
+		                theme: app.theme.clone(),
+	                }
 	    )));
-	let mut number_input_field: Rc<RefCell<Box<dyn HandleKeypress>>> = Rc::new(RefCell::new(Box::new(InputNumberField::new(
-		0,
-		10,
-		false,
-		app.theme.clone(),
-	))));
+
+	let mut number_input_field: Rc<RefCell<Box<dyn HandleKeypress>>> =
+	Rc::new(RefCell::new(Box::new(InputNumberField {
+		row: 0,
+		column: 10,
+		width: 10,
+		height: 1,
+		content_number: 0,
+		is_highlighted: false,
+		theme: app.theme.clone(),
+	})));
+
 	let mut selected_element:Option<Rc<RefCell<Box<dyn HandleKeypress>>>> = None;
-	let mut selectable_elements_list = Vec::new();
+	let mut selectable_elements_list: Vec<Rc<RefCell<Box<dyn HandleKeypress>>>> = Vec::new();
 
 	selectable_elements_list.push(string_input_field.clone());
 	selectable_elements_list.push(number_input_field.clone());
@@ -64,45 +78,26 @@ fn main() {
 				_ => {}
 			}
 		}
-		for (row, elem) in selectable_elements_list.iter().enumerate(){
-			let (x, y) = test_fn();
-			execute!(stdout,
-				MoveTo(0, row as u16),
-				Clear(ClearType::CurrentLine),
-				PrintStyledContent(elem.borrow().get_styled_content()),
-				x, y
-			).unwrap();
+		for elem in selectable_elements_list.iter(){
+			elem.borrow().display(&mut stdout)
 		}
-		// execute!(
-		// 	stdout,
-		// 	MoveTo(0, 0),
-		// 	Clear(ClearType::CurrentLine),
-		// 	PrintStyledContent(input_field.borrow().get_styled_content()),
-		// )
-		// .expect("Error putting content into queue");
+		stdout.flush().unwrap();
 		sleep_time = target_duration_micros - start_time.elapsed().as_micros() as u64;
 	}
 }
 
-fn test_fn() -> (Print<String>, PrintStyledContent<String>) {
-	let test_string = String::from("Hello, world!");
-	let styled_content = StyledContent::new(
-		Theme::default().get_content_style(),
-		test_string.clone()
-	);
-	let print_empty = Print(" ".repeat(test_string.chars().count()));
-	let print_styled_content = PrintStyledContent(styled_content);
-	(print_empty, print_styled_content)
-}
-
 trait HandleKeypress {
 	fn handle_keypress(&mut self, key: KeyEvent);
-	fn get_styled_content(&self) -> StyledContent<String>;
+	fn display(&self, stdout: &mut Stdout);
+
 }
 
 struct InputTextField {
+	row: u16,
+	column: u16,
+	width: usize,
+	height: usize,
 	text: String,
-	pub max_width: usize,
 	is_highlighted: bool,
 	theme: Theme,
 }
@@ -113,7 +108,7 @@ impl HandleKeypress for InputTextField {
 			None => {}
 			Some(c) => {
 				self.text.push(c);
-				while self.max_width < self.text.chars().count() {
+				while (self.width * self.height) < self.text.chars().count() {
 					self.text.remove(0);
 				}
 			}
@@ -123,10 +118,28 @@ impl HandleKeypress for InputTextField {
 		}
 	}
 
-	fn get_styled_content(&self) -> StyledContent<String> {
-		match self.is_highlighted {
-			true => StyledContent::new(self.theme.get_highlight_style(), self.text.clone()),
-			false => StyledContent::new(self.theme.get_content_style(), self.text.clone()),
+	fn display(&self, stdout: &mut Stdout) {
+		let split_text: Vec<String> = self.text
+			.chars()
+			.collect::<Vec<char>>()
+			.chunks(self.width)
+			.map(|c| c.iter().collect::<String>())
+			.collect();
+
+		let mut styled_text;
+		for row in 0..self.height {
+			let text_line = match split_text.get(row){
+				Some(l) => l,
+				None => "",
+			};
+			styled_text = StyledContent::new(self.get_current_style(), text_line);
+			queue!(
+				stdout,
+				MoveTo(self.column, self.row + row as u16),
+				Print(" ".repeat(self.width)),
+				MoveTo(self.column, self.row + row as u16),
+				PrintStyledContent(styled_text),
+			).unwrap()
 		}
 	}
 }
@@ -134,44 +147,65 @@ impl HandleKeypress for InputTextField {
 impl InputTextField {
 	fn default() -> InputTextField {
 		InputTextField {
+			row: 0,
+			column: 0,
 			text: String::default(),
-			max_width: 50,
+			width: 50,
 			is_highlighted: false,
 			theme: Default::default(),
+			height: 0,
 		}
 	}
-	fn new(text: String, max_width: usize, is_highlighted: bool, theme: Theme) -> InputTextField {
+	fn new(row: u16, column: u16, text: String, width: usize, height: usize, is_highlighted: bool, theme: Theme) -> InputTextField {
 		InputTextField {
+			row,
+			column,
 			text,
-			max_width,
+			width,
 			is_highlighted,
 			theme,
+			height,
 		}
 	}
-	fn change_max_width(&mut self, max_width: usize) {
-		self.max_width = max_width;
-		while self.max_width < self.text.chars().count() {
-			self.text.remove(0);
+
+	fn get_current_style(&self) -> ContentStyle {
+		match self.is_highlighted {
+			true => self.theme.get_highlight_style(),
+			false => self.theme.get_content_style()
 		}
 	}
 }
 
 struct InputNumberField {
+	row: u16,
+	column: u16,
+	width: usize,
+	height: usize,
 	content_number: i128,
-	max_width: usize,
 	is_highlighted: bool,
 	theme: Theme,
 }
 
 impl InputNumberField {
-	fn new(starting_number: i128, max_width: usize, is_highlighted: bool, theme: Theme) -> InputNumberField {
+	fn new(row: u16, column: u16, width: usize, height: usize, starting_number:i128, is_highlighted: bool, theme: Theme) -> InputNumberField {
 		InputNumberField {
+			row,
+			column,
+			width,
+			height,
 			content_number: starting_number,
-			max_width,
 			is_highlighted,
 			theme,
 		}
 	}
+
+	fn get_current_style(&self) -> ContentStyle {
+		match self.is_highlighted {
+			true => self.theme.get_highlight_style(),
+			false => self.theme.get_content_style()
+		}
+	}
+
 }
 
 impl HandleKeypress for InputNumberField {
@@ -208,14 +242,14 @@ impl HandleKeypress for InputNumberField {
 				loop {
 					number_text.clear();
 					number_text = self.content_number.to_string();
-					if self.max_width > number_text.chars().count() {
+					if (self.width * self.height) > number_text.chars().count() {
 						break;
 					} else {
 						if self.content_number > 0 {
-							self.content_number %= 10_i128.pow(self.max_width as u32 - 1);
+							self.content_number %= 10_i128.pow((self.width * self.height) as u32 - 1);
 						}
 						if self.content_number < 0 {
-							self.content_number %= 10_i128.pow(self.max_width as u32 - 2);
+							self.content_number %= 10_i128.pow((self.width * self.height) as u32 - 2);
 						}
 					}
 				}
@@ -225,11 +259,31 @@ impl HandleKeypress for InputNumberField {
 			self.content_number /= 10;
 		}
 	}
+	fn display(&self, stdout: &mut Stdout) {
 
-	fn get_styled_content(&self) -> StyledContent<String> {
-		match self.is_highlighted {
-			true => StyledContent::new(self.theme.get_highlight_style(), self.content_number.to_string()),
-			false => StyledContent::new(self.theme.get_content_style(), self.content_number.to_string()),
+		let text = self.content_number.to_string();
+
+		let split_text: Vec<String> = text
+			.chars()
+			.collect::<Vec<char>>()
+			.chunks(self.width)
+			.map(|c| c.iter().collect::<String>())
+			.collect();
+
+		let mut styled_text;
+		for row in 0..self.height {
+			let text_line = match split_text.get(row){
+				Some(l) => l,
+				None => "",
+			};
+			styled_text = StyledContent::new(self.get_current_style(), text_line);
+			queue!(
+				stdout,
+				MoveTo(self.column, self.row + row as u16),
+				Print(" ".repeat(self.width)),
+				MoveTo(self.column, self.row + row as u16),
+				PrintStyledContent(styled_text),
+			).unwrap()
 		}
 	}
 }
