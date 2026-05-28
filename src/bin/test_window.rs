@@ -1,8 +1,7 @@
 use crossterm::cursor::MoveTo;
-use crossterm::event::{poll, read, Event, KeyEvent, KeyModifiers};
-use crossterm::{execute, queue};
+use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::{ContentStyle, Print, PrintStyledContent, StyledContent};
-use crossterm::terminal::{Clear, ClearType};
+use crossterm::queue;
 use mancala::app::App;
 use mancala::theme::Theme;
 use std::cell::RefCell;
@@ -14,37 +13,11 @@ fn main() {
 	let mut app = App::new();
 	let mut stdout = stdout();
 
-	let mut string_input_field: Rc<RefCell<Box<dyn HandleKeypress>>> =
-	    Rc::new(
-	        RefCell::new(
-	            Box::new(
-	                InputTextField{
-						row: 0,
-		                column: 0,
-		                width: 5,
-		                height: 2,
-		                text: "".to_string(),
-		                is_highlighted: true,
-		                theme: app.theme.clone(),
-	                }
-	    )));
 
-	let mut number_input_field: Rc<RefCell<Box<dyn HandleKeypress>>> =
-	Rc::new(RefCell::new(Box::new(InputNumberField {
-		row: 0,
-		column: 10,
-		width: 10,
-		height: 1,
-		content_number: 0,
-		is_highlighted: false,
-		theme: app.theme.clone(),
-	})));
+	let mut selected_element:Option<Rc<RefCell<dyn HandleKeypress>>> = None;
+	let mut selectable_elements_list: Vec<Rc<RefCell<dyn HandleKeypress>>> = Vec::new();
 
-	let mut selected_element:Option<Rc<RefCell<Box<dyn HandleKeypress>>>> = None;
-	let mut selectable_elements_list: Vec<Rc<RefCell<Box<dyn HandleKeypress>>>> = Vec::new();
-
-	selectable_elements_list.push(string_input_field.clone());
-	selectable_elements_list.push(number_input_field.clone());
+	(selected_element, selectable_elements_list) = populate_window();
 
 	let target_fps = 60;
 	let target_duration_micros = 1000000 / target_fps;
@@ -61,11 +34,17 @@ fn main() {
 							app.running = false;
 							break;
 						}
-						if key_event.code.is_left() {
-							selected_element = selectable_elements_list.first().cloned();
-						}
-						if key_event.code.is_right(){
-							selected_element = selectable_elements_list.last().cloned();
+						// if key_event.code.is_left() {
+						// 	selected_element = selectable_elements_list.first().cloned();
+						// }
+						// if key_event.code.is_right(){
+						// 	selected_element = selectable_elements_list.last().cloned();
+						// }
+						if matches!(key_event.code, KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right) {
+							selected_element = move_to_new_selectable_element(
+								selected_element,
+								selectable_elements_list.as_slice(),
+								key_event.code);
 						}
 						match selected_element {
 							Some(ref e) => {
@@ -86,10 +65,94 @@ fn main() {
 	}
 }
 
+fn populate_window() -> (Option<Rc<RefCell<dyn HandleKeypress>>>, Vec<Rc<RefCell<dyn HandleKeypress>>>) {
+	let mut selected_element: Option<Rc<RefCell<dyn HandleKeypress>>>;
+	let mut selectable_element_list: Vec<Rc<RefCell<dyn HandleKeypress>>> = Vec::new();
+
+	let mut new_element: Rc<RefCell<dyn HandleKeypress>>;
+	let window_elements = [
+		(0, 10, 5, 1, "UP", false),
+		(3, 5, 5, 1, "LEFT", false),
+		(3, 10, 5, 1, "CENTER", false),
+		(3, 16, 5, 1, "RIGTH", false),
+		(5, 10, 5, 1, "DOWN", false),
+	];
+
+	for (row, column, width, height, text, is_highlighted) in window_elements.iter(){
+		new_element = Rc::new(RefCell::new(
+			InputTextField{
+				row: *row,
+				column: *column,
+				width: *width,
+				height: *height,
+				text: text.to_string(),
+				is_highlighted: *is_highlighted,
+				theme: Default::default(),
+			}
+		));
+		selectable_element_list.push(new_element);
+	};
+	selected_element = Some(selectable_element_list.first().unwrap().clone());
+	selected_element.as_ref().unwrap().borrow_mut().switch_highlight(true);
+	(selected_element, selectable_element_list)
+}
+
+fn move_to_new_selectable_element(
+	old_selected_element: Option<Rc<RefCell<dyn HandleKeypress>>>,
+	selectable_element_list: &[Rc<RefCell<dyn HandleKeypress>>],
+	key_code: KeyCode,
+) -> Option<Rc<RefCell<dyn HandleKeypress>>> {
+	let old_rc = match old_selected_element {
+		Some(el) => el,
+		None => {
+			if let Some(first) = selectable_element_list.first() {
+				first.borrow_mut().switch_highlight(true);
+				return Some(first.clone());
+			}
+			return None;
+		}
+	};
+
+	let (row_c, col_c) = old_rc.borrow().get_elements_center();
+	let mut nearest_element: Option<Rc<RefCell<dyn HandleKeypress>>>= None;
+	let mut nearest_element_distance = u16::MAX;
+
+	for element in selectable_element_list {
+		if Rc::ptr_eq(element, &old_rc) {
+			continue;
+		}
+		let (temp_row_c, temp_col_c) = element.borrow().get_elements_center();
+		let is_in_direction = match key_code {
+			KeyCode::Up => temp_row_c < row_c,    // Assuming 0 is top of screen
+			KeyCode::Down => temp_row_c > row_c,  // Assuming max_val is bottom
+			KeyCode::Left => temp_col_c < col_c,
+			KeyCode::Right => temp_col_c > col_c,
+			_ => false,
+		};
+		if is_in_direction {
+			let distance = row_c.abs_diff(temp_row_c) + col_c.abs_diff(temp_col_c);
+
+			if distance < nearest_element_distance {
+				nearest_element = Some(element.clone());
+				nearest_element_distance = distance;
+			}
+		}
+	}
+
+	if let Some(ref new_element) = nearest_element {
+		old_rc.borrow_mut().switch_highlight(false);
+		new_element.borrow_mut().switch_highlight(true);
+		nearest_element
+	} else {
+		Some(old_rc.clone())
+	}
+}
+
 trait HandleKeypress {
 	fn handle_keypress(&mut self, key: KeyEvent);
 	fn display(&self, stdout: &mut Stdout);
-
+	fn switch_highlight(&mut self, new_state: bool);
+	fn get_elements_center(&self) -> (u16, u16);
 }
 
 struct InputTextField {
@@ -141,6 +204,15 @@ impl HandleKeypress for InputTextField {
 				PrintStyledContent(styled_text),
 			).unwrap()
 		}
+	}
+
+	fn switch_highlight(&mut self, new_state: bool) {
+		self.is_highlighted = new_state;
+	}
+	fn get_elements_center(&self) -> (u16, u16) {
+		let row_c = self.row + (self.height / 2) as u16;
+		let col_c = self.column + (self.width / 2) as u16;
+		(row_c.clone(), col_c.clone())
 	}
 }
 
@@ -285,5 +357,13 @@ impl HandleKeypress for InputNumberField {
 				PrintStyledContent(styled_text),
 			).unwrap()
 		}
+	}
+	fn switch_highlight(&mut self, new_state: bool) {
+		self.is_highlighted = new_state;
+	}
+	fn get_elements_center(&self) -> (u16, u16) {
+		let row_c = self.row + (self.height / 2) as u16;
+		let col_c = self.column + (self.width / 2) as u16;
+		(row_c.clone(), col_c.clone())
 	}
 }
