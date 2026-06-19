@@ -19,10 +19,25 @@ fn main() {
 
 	(selected_element, selectable_elements_list) = populate_window();
 
+	let window = Rc::new(RefCell::new(
+		Window{
+			row: 0,
+			column: 50,
+			width: 20,
+			height: 20,
+			selectable_elements: vec![],
+			is_highlighted: false,
+			theme: Default::default(),
+		}
+	));
+	selectable_elements_list.push(window);
+
 	let target_fps = 60;
 	let target_duration_micros = 1000000 / target_fps;
 	let mut start_time;
 	let mut sleep_time = 0u64;
+
+	let mut event_consumer:Option<Rc<RefCell<dyn HandleKeypress>>> = None;
 
 	while app.running {
 		start_time = Instant::now();
@@ -40,17 +55,28 @@ fn main() {
 						// if key_event.code.is_right(){
 						// 	selected_element = selectable_elements_list.last().cloned();
 						// }
-						if matches!(key_event.code, KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right) {
-							selected_element = move_to_new_selectable_element(
-								selected_element,
-								selectable_elements_list.as_slice(),
-								key_event.code);
-						}
-						match selected_element {
-							Some(ref e) => {
-								e.borrow_mut().handle_keypress(key_event);
+
+						event_consumer = match event_consumer{
+							Some(event_consumer_ref) => {
+								let response = {
+									let mut consumer = event_consumer_ref.borrow_mut();
+									consumer.handle_keypress(key_event)
+								};
+								match response {
+								    KeyEventResponse::RemoveEventConsumer => {None}
+									KeyEventResponse::ChangeEventConsumer(new_consumer) => {Some(new_consumer)}
+									KeyEventResponse::KeepEventConsumer => {Some(event_consumer_ref)}
+								}
 							}
-							None => {}
+							None => {
+								if matches!(key_event.code, KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right) {
+									selected_element = move_to_new_selectable_element(
+										selected_element,
+										selectable_elements_list.as_slice(),
+										key_event.code);
+								}
+								event_consumer
+							}
 						}
 					}
 				}
@@ -149,7 +175,7 @@ fn move_to_new_selectable_element(
 }
 
 trait HandleKeypress {
-	fn handle_keypress(&mut self, key: KeyEvent);
+	fn handle_keypress(&mut self, key: KeyEvent) -> KeyEventResponse;
 	fn display(&self, stdout: &mut Stdout);
 	fn switch_highlight(&mut self, new_state: bool);
 	fn get_elements_center(&self) -> (u16, u16);
@@ -166,7 +192,7 @@ struct InputTextField {
 }
 
 impl HandleKeypress for InputTextField {
-	fn handle_keypress(&mut self, key: KeyEvent) {
+	fn handle_keypress(&mut self, key: KeyEvent) -> KeyEventResponse {
 		match key.code.as_char() {
 			None => {}
 			Some(c) => {
@@ -179,6 +205,7 @@ impl HandleKeypress for InputTextField {
 		if key.code.is_backspace() | key.code.is_delete() {
 			self.text.pop();
 		}
+		KeyEventResponse::KeepEventConsumer
 	}
 
 	fn display(&self, stdout: &mut Stdout) {
@@ -281,7 +308,7 @@ impl InputNumberField {
 }
 
 impl HandleKeypress for InputNumberField {
-	fn handle_keypress(&mut self, key: KeyEvent) {
+	fn handle_keypress(&mut self, key: KeyEvent) -> KeyEventResponse{
 		match key.code.as_char() {
 			None => {}
 			Some(c) => {
@@ -330,6 +357,7 @@ impl HandleKeypress for InputNumberField {
 		if key.code.is_backspace() | key.code.is_delete() {
 			self.content_number /= 10;
 		}
+		KeyEventResponse::KeepEventConsumer
 	}
 	fn display(&self, stdout: &mut Stdout) {
 
@@ -361,6 +389,68 @@ impl HandleKeypress for InputNumberField {
 	fn switch_highlight(&mut self, new_state: bool) {
 		self.is_highlighted = new_state;
 	}
+	fn get_elements_center(&self) -> (u16, u16) {
+		let row_c = self.row + (self.height / 2) as u16;
+		let col_c = self.column + (self.width / 2) as u16;
+		(row_c.clone(), col_c.clone())
+	}
+}
+
+enum KeyEventResponse{
+	KeepEventConsumer,
+	RemoveEventConsumer,
+	ChangeEventConsumer(Rc<RefCell<dyn HandleKeypress>>)
+}
+
+struct Window {
+	row: u16,
+	column: u16,
+	width: usize,
+	height: usize,
+	selectable_elements: Vec<Rc<RefCell<dyn HandleKeypress>>>,
+	is_highlighted: bool,
+	theme: Theme,
+}
+
+
+impl HandleKeypress for Window {
+	fn handle_keypress(&mut self, key: KeyEvent) -> KeyEventResponse {
+		KeyEventResponse::KeepEventConsumer
+	}
+
+	fn display(&self, stdout: &mut Stdout) {
+
+		let top_bottom_border = match self.is_highlighted{
+			true => {StyledContent::new(self.theme.get_highlight_style(), "X".repeat(self.width +1))}
+			false => {StyledContent::new(self.theme.get_content_style(), "X".repeat(self.width +1))}
+		};
+		let side_border = match self.is_highlighted{
+			true => {StyledContent::new(self.theme.get_highlight_style(), "X")}
+			false => {StyledContent::new(self.theme.get_content_style(), "X")}
+		};
+
+		for row in 0..self.height {
+			if row == 0 || row == self.height - 1 {
+				queue!(stdout,
+					MoveTo(self.column, row as u16 + self.row),
+					PrintStyledContent(top_bottom_border.clone())
+				).unwrap()
+			}
+			else{
+				queue!(stdout,
+					MoveTo(self.column, row as u16 + self.row),
+					PrintStyledContent(side_border),
+					MoveTo(self.column + self.width as u16, row as u16 + self.row),
+					PrintStyledContent(side_border)
+				).unwrap()
+			}
+		}
+	}
+
+	fn switch_highlight(&mut self, new_state: bool) {
+		self.is_highlighted = new_state;
+	}
+
 	fn get_elements_center(&self) -> (u16, u16) {
 		let row_c = self.row + (self.height / 2) as u16;
 		let col_c = self.column + (self.width / 2) as u16;
